@@ -1,0 +1,87 @@
+"""Phase-2 unit tests: state gather (bd/po mocked) + Slack notify (HTTP mocked)."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import po_director.notify as notify
+import po_director.render as render
+from po_director.config import DirectorConfig
+
+
+def _cfg(tmp_path: Path, **kw: object) -> DirectorConfig:
+    return DirectorConfig(workspace_dir=str(tmp_path), **kw)  # type: ignore[arg-type]
+
+
+def test_build_board_uses_command_output(tmp_path: Path, monkeypatch) -> None:
+    seen: list[list[str]] = []
+
+    def fake_run(cmd: list[str], cwd: str) -> str:
+        seen.append(cmd)
+        return "OUT:" + cmd[1]
+
+    monkeypatch.setattr(render, "_run", fake_run)
+    board = render.build_board(_cfg(tmp_path))
+    assert "### ready" in board and "OUT:ready" in board
+    assert ["bd", "human", "list"] in seen
+    assert ["po", "status"] in seen
+
+
+def test_build_prompt_renders_with_state(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "goal.md").write_text("Win.", encoding="utf-8")
+    monkeypatch.setattr(render, "_run", lambda cmd, cwd: "(none)")
+    out = render.build_prompt(_cfg(tmp_path, north_star="velocity"), "director")
+    assert "Win." in out
+    assert "velocity" in out
+    assert "{{" not in out
+
+
+def test_latest_handoff_picks_newest(tmp_path: Path, monkeypatch) -> None:
+    mem = tmp_path / ".director"
+    mem.mkdir()
+    (mem / "handoff-2026-05-01.md").write_text("old", encoding="utf-8")
+    newest = mem / "handoff-2026-05-29.md"
+    newest.write_text("NEWEST NOTE", encoding="utf-8")
+    # make newest actually newer by mtime
+    import os
+    import time
+
+    os.utime(newest, (time.time() + 10, time.time() + 10))
+    monkeypatch.setattr(render, "_run", lambda cmd, cwd: "")
+    out = render.build_prompt(_cfg(tmp_path), "director")
+    assert "NEWEST NOTE" in out
+
+
+def test_notify_noop_without_channel(tmp_path: Path) -> None:
+    assert notify.post_slack(None, "t", "b", token="xoxb-fake") is False
+
+
+def test_notify_noop_without_token(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("SLACK_BOT_TOKEN", raising=False)
+    assert notify.post_slack("C123", "t", "b") is False
+
+
+def test_notify_posts_when_configured(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeResp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b'{"ok": true}'
+
+    def fake_urlopen(req, timeout=0):
+        captured["url"] = req.full_url
+        captured["body"] = req.data
+        captured["auth"] = req.headers.get("Authorization")
+        return FakeResp()
+
+    monkeypatch.setattr(notify.urllib.request, "urlopen", fake_urlopen)
+    ok = notify.post_slack("C123", "Proposal", "do the thing", token="xoxb-fake")
+    assert ok is True
+    assert b"C123" in captured["body"]  # type: ignore[operator]
+    assert captured["auth"] == "Bearer xoxb-fake"
