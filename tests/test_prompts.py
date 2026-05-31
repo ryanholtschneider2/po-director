@@ -20,7 +20,10 @@ _DIRECTOR_VARS = {
     "goal": "Ship the roadmap.",
     "north_star": "open issues burned down",
     "board": "bd ready: (none)",
-    "approval_mode": "always",
+    "work_source": "ideate",
+    "work_ask": "gate",
+    "merge_mode": "auto",
+    "merge_strategy": "pr",
     "memory": "(no prior handoff)",
 }
 _REFLECTOR_VARS = {
@@ -42,7 +45,8 @@ def test_director_prompt_fully_renders() -> None:
     out = render_template(AGENTS_DIR, "director", **_DIRECTOR_VARS)
     assert not _LEFTOVER.search(out), f"unrendered placeholders: {_LEFTOVER.findall(out)}"
     # Key behavioral anchors survived the flatten.
-    assert "approval_mode = always" in out
+    assert "work_ask = gate" in out
+    assert "work_source = ideate" in out
     assert "bd human" in out
     assert "/tmp/ws" in out
 

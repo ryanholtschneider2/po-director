@@ -42,6 +42,10 @@ def _ensure_config(
     workspace_dir: str,
     *,
     channel: str | None,
+    work_source: str | None,
+    work_ask: str | None,
+    merge_mode: str | None,
+    merge_strategy: str | None,
     approval_mode: str | None,
     pulse_cron: str | None,
     reflect_cron: str | None,
@@ -53,8 +57,17 @@ def _ensure_config(
 
     if channel is not None:
         cfg.slack_channel = channel
-    if approval_mode is not None:
-        cfg.approval_mode = approval_mode
+    if work_source is not None:
+        cfg.work_source = work_source
+    if work_ask is not None:
+        cfg.work_ask = work_ask
+    if merge_mode is not None:
+        cfg.merge_mode = merge_mode
+    if merge_strategy is not None:
+        cfg.merge_strategy = merge_strategy
+    # Legacy alias: --approval-mode maps onto the inbound work_ask axis.
+    if approval_mode is not None and work_ask is None:
+        cfg.work_ask = "gate"
     if pulse_cron is not None:
         cfg.pulse_cron = pulse_cron
     if reflect_cron is not None:
@@ -89,10 +102,11 @@ def _start(cfg: DirectorConfig) -> str:
         applied.append(dep.name)
     lines = [
         "Director started for " + cfg.workspace_dir,
-        "  config:       " + str(config_path(cfg.workspace_dir)),
-        "  approval_mode: " + cfg.approval_mode,
+        "  config:        " + str(config_path(cfg.workspace_dir)),
+        "  work:          " + cfg.work_source + " / " + cfg.work_ask,
+        "  merge_mode:    " + cfg.merge_mode + " (" + cfg.merge_strategy + ")",
         "  slack_channel: " + (cfg.slack_channel or "(none — set with --channel)"),
-        "  deployments:  " + ", ".join(applied),
+        "  deployments:   " + ", ".join(applied),
         "",
         "Ensure a worker is running:  prefect worker start --pool po",
     ]
@@ -124,7 +138,10 @@ def _status(cfg: DirectorConfig) -> str:
             "Director status for " + cfg.workspace_dir,
             "  config:        " + str(config_path(cfg.workspace_dir)),
             "  north_star:    " + cfg.north_star,
-            "  approval_mode: " + cfg.approval_mode,
+            "  work:          " + cfg.work_source + " / " + cfg.work_ask
+            + "  (source / ask)",
+            "  merge_mode:    " + cfg.merge_mode + " (" + cfg.merge_strategy + ")",
+            "  ci_cmd:        " + (cfg.ci_cmd or "(unset — agent will detect)"),
             "  slack_channel: " + (cfg.slack_channel or "(none)"),
             "  pulse_cron:    " + cfg.pulse_cron,
             "  reflect_cron:  " + cfg.reflect_cron,
@@ -141,16 +158,25 @@ def director(
     *,
     dir: str = ".",
     channel: str | None = None,
-    approval_mode: str | None = None,
+    work_source: str | None = None,
+    work_ask: str | None = None,
+    merge_mode: str | None = None,
+    merge_strategy: str | None = None,
+    approval_mode: str | None = None,  # deprecated alias -> work_ask=gate
     pulse_cron: str | None = None,
     reflect_cron: str | None = None,
     north_star: str | None = None,
 ) -> str:
     """Start/stop/inspect the Director for a workspace directory.
 
+    Involvement is two independent axes (see .ade/settings.toml):
+      inbound  --work-source ideate|issues  --work-ask gate|auto
+      outbound --merge-mode auto|human|approve-all|ai-approve-all  --merge-strategy pr|direct
+
     Examples:
         po director start
-        po director start --dir . --channel C08LB4V9ZJ8 --approval-mode batches
+        po director start --dir . --channel C08LB4V9ZJ8 --work-source issues --work-ask auto
+        po director start --merge-mode human
         po director status
         po director stop
     """
@@ -162,6 +188,10 @@ def director(
         cfg = _ensure_config(
             workspace_dir,
             channel=channel,
+            work_source=work_source,
+            work_ask=work_ask,
+            merge_mode=merge_mode,
+            merge_strategy=merge_strategy,
             approval_mode=approval_mode,
             pulse_cron=pulse_cron,
             reflect_cron=reflect_cron,
