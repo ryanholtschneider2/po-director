@@ -32,6 +32,13 @@ _REFLECTOR_VARS = {
     "north_star": "open issues burned down",
     "board": "bd ready: (none)",
 }
+_SHERIFF_VARS = {
+    "feature_id": "ws-42",
+    "workspace_dir": "/tmp/ws",
+    "merge_mode": "auto",
+    "merge_strategy": "pr",
+    "ci_cmd": "make test",
+}
 
 _LEFTOVER = re.compile(r"\{\{.*?\}\}")
 
@@ -39,6 +46,16 @@ _LEFTOVER = re.compile(r"\{\{.*?\}\}")
 def test_prompt_files_exist() -> None:
     assert (AGENTS_DIR / "director" / "prompt.md").is_file()
     assert (AGENTS_DIR / "reflector" / "prompt.md").is_file()
+    assert (AGENTS_DIR / "pr-sheriff" / "prompt.md").is_file()
+
+
+def test_pr_sheriff_prompt_fully_renders() -> None:
+    out = render_template(AGENTS_DIR, "pr-sheriff", **_SHERIFF_VARS)
+    assert not _LEFTOVER.search(out), f"unrendered placeholders: {_LEFTOVER.findall(out)}"
+    # Behavioral anchors: feature id, the four verdicts, dispatcher discipline.
+    for anchor in ("ws-42", "fix-merge", "needs-human", "needs-rewrite"):
+        assert anchor in out
+    assert "never write application code" in out.lower()
 
 
 def test_director_prompt_fully_renders() -> None:

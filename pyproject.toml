@@ -13,6 +13,7 @@ dependencies = [
 [project.entry-points."po.formulas"]
 director-pulse = "po_director.coordinator:director_pulse"
 director-reflect = "po_director.coordinator:director_reflect"
+pr-sheriff = "po_director.sheriff:pr_sheriff"
 
 # Scheduled deployments (pulse cron + reflect cron). `po deploy` calls register().
 [project.entry-points."po.deployments"]
