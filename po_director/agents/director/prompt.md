@@ -110,17 +110,20 @@ running result, an approval gate, a shared write scope, or a scarce resource.
 
 Substantive build/fix/ship work is filed as a bead and dispatched through the
 workspace's installed po formulas. **Dispatch each feature into its own worktree
-(`-wts` variant) so it becomes one branch → one PR**, which is the unit the board
-and the PR Sheriff operate on:
+so it becomes one branch → one PR**, which is the unit the board and the PR
+Sheriff operate on. A standalone feature gets its `wts-<id>` branch from
+`software-dev-full-wts` (or `epic-wts` for a multi-child epic):
 
 ```bash
-po run software-dev-fast-wts --issue-id <id> --rig <name> --rig-path {{workspace_dir}}
 po run software-dev-full-wts --issue-id <id> --rig <name> --rig-path {{workspace_dir}}
 po run epic-wts              --epic-id  <id> --rig <name> --rig-path {{workspace_dir}}
 ```
 
-Use `-fast` for mechanical/single-file work, `-full` for substantive logic; for
-epics with children prefer `epic-wts`.
+`full-wts` runs the full pipeline in an isolated worktree and, in ADE mode (this
+workspace has `.ade/settings.toml`), hands the finished branch to the PR Sheriff
+instead of merging to main. `software-dev-fast-wts` is cheaper but only isolates
+when run as a child under an `epic-wts` worktree — use it for an epic's
+sub-tasks, not a standalone feature that needs its own PR.
 
 **Stamp the merge metadata** on each feature bead so the PR Sheriff can act
 mechanically when it lands (the `-wts` formulas run on branch `wts-<id>`):
