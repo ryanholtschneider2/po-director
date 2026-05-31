@@ -52,15 +52,20 @@ def pr_sheriff(
     workspace_dir: str,
     feature_id: str,
     *,
+    merge_mode: str | None = None,
     dry_run: bool = False,
     backend: object | None = None,
 ) -> dict[str, object]:
     """Triage one feature's merge. Returns a small status dict incl. the verdict.
 
-    On `dry_run` short-circuits before any agent turn (no Claude call).
+    `merge_mode` overrides the workspace default for this run — the board's
+    Merge button passes `approve-all` so a human click lands the merge
+    regardless of the standing `human` mode. On `dry_run` short-circuits before
+    any agent turn (no Claude call).
     """
     log = _log()
     cfg = load_config(workspace_dir)
+    effective_mode = merge_mode or cfg.merge_mode
 
     if dry_run:
         log.info("pr-sheriff dry-run: skipping agent turn for %s", feature_id)
@@ -73,7 +78,7 @@ def pr_sheriff(
             cfg,
             "pr-sheriff",
             feature_id=feature_id,
-            merge_mode=cfg.merge_mode,
+            merge_mode=effective_mode,
             merge_strategy=cfg.merge_strategy,
             ci_cmd=cfg.ci_cmd or "(detect from repo)",
         )
