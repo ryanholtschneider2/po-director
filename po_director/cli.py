@@ -21,6 +21,7 @@ from pathlib import Path
 from po_director.config import (
     DEFAULT_NORTH_STAR,
     DirectorConfig,
+    ade_config_path,
     config_path,
     load_config,
     save_config,
@@ -51,8 +52,15 @@ def _ensure_config(
     reflect_cron: str | None,
     north_star: str | None,
 ) -> DirectorConfig:
-    """Load-or-create config, prompting for goal/North Star on first run."""
-    existing = config_path(workspace_dir).is_file()
+    """Load-or-create config, prompting for goal/North Star on first run.
+
+    A workspace counts as already-configured if EITHER `.director.toml` or an
+    `.ade/settings.toml` exists — the latter is the orc-managed source of truth
+    (goal/north_star/involvement live there and override `.director.toml`), so
+    when it's present we must NOT re-prompt or we'd shadow the operator's
+    settings with a freshly-prompted value.
+    """
+    existing = config_path(workspace_dir).is_file() or ade_config_path(workspace_dir).is_file()
     cfg = load_config(workspace_dir)
 
     if channel is not None:
