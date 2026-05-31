@@ -20,7 +20,10 @@ _DIRECTOR_VARS = {
     "goal": "Ship the roadmap.",
     "north_star": "open issues burned down",
     "board": "bd ready: (none)",
-    "approval_mode": "always",
+    "work_source": "ideate",
+    "work_ask": "gate",
+    "merge_mode": "auto",
+    "merge_strategy": "pr",
     "memory": "(no prior handoff)",
 }
 _REFLECTOR_VARS = {
@@ -29,6 +32,13 @@ _REFLECTOR_VARS = {
     "north_star": "open issues burned down",
     "board": "bd ready: (none)",
 }
+_SHERIFF_VARS = {
+    "feature_id": "ws-42",
+    "workspace_dir": "/tmp/ws",
+    "merge_mode": "auto",
+    "merge_strategy": "pr",
+    "ci_cmd": "make test",
+}
 
 _LEFTOVER = re.compile(r"\{\{.*?\}\}")
 
@@ -36,13 +46,24 @@ _LEFTOVER = re.compile(r"\{\{.*?\}\}")
 def test_prompt_files_exist() -> None:
     assert (AGENTS_DIR / "director" / "prompt.md").is_file()
     assert (AGENTS_DIR / "reflector" / "prompt.md").is_file()
+    assert (AGENTS_DIR / "pr-sheriff" / "prompt.md").is_file()
+
+
+def test_pr_sheriff_prompt_fully_renders() -> None:
+    out = render_template(AGENTS_DIR, "pr-sheriff", **_SHERIFF_VARS)
+    assert not _LEFTOVER.search(out), f"unrendered placeholders: {_LEFTOVER.findall(out)}"
+    # Behavioral anchors: feature id, the four verdicts, dispatcher discipline.
+    for anchor in ("ws-42", "fix-merge", "needs-human", "needs-rewrite"):
+        assert anchor in out
+    assert "never write application code" in out.lower()
 
 
 def test_director_prompt_fully_renders() -> None:
     out = render_template(AGENTS_DIR, "director", **_DIRECTOR_VARS)
     assert not _LEFTOVER.search(out), f"unrendered placeholders: {_LEFTOVER.findall(out)}"
     # Key behavioral anchors survived the flatten.
-    assert "approval_mode = always" in out
+    assert "work_ask = gate" in out
+    assert "work_source = ideate" in out
     assert "bd human" in out
     assert "/tmp/ws" in out
 

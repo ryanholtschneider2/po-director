@@ -59,7 +59,8 @@ def _gate_map(workspace_dir: str) -> dict[str, str]:
         logger.exception("bd human list --json failed")
         return {}
     try:
-        rows = json.loads(proc.stdout or "[]")
+        # bd v1.0.4 emits `null` (not `[]`) when there are no gates.
+        rows = json.loads(proc.stdout or "[]") or []
     except ValueError:
         logger.warning("bd human list --json returned non-JSON output")
         return {}

@@ -112,3 +112,11 @@ def test_reflect_posts_when_output(tmp_path: Path, monkeypatch) -> None:
     )
     assert out["posted"] == 1
     assert len(posts) == 1
+
+
+def test_gate_map_handles_null(monkeypatch) -> None:
+    # bd v1.0.4 emits `null` (not []) when there are no human gates.
+    class P:
+        stdout = "null"
+    monkeypatch.setattr(coord.subprocess, "run", lambda *a, **k: P())
+    assert coord._gate_map("/tmp/ws") == {}

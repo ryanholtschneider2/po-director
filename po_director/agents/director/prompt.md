@@ -42,8 +42,18 @@ Also read the goal/strategy docs if present (`goal.md`, `ROADMAP.md`,
 
 ### 2. Decide what to do
 
-- If the goal implies missing actionable work, **file the next concrete bead**
-  (`bd create …`) so the work is captured before you act.
+**Work source — `work_source = {{work_source}}`:**
+- **`ideate`** — generate work from the goal + repo state. If the goal implies
+  missing actionable work, **file the next concrete bead** (`bd create …`) so it
+  is captured before you act.
+- **`issues`** — do **not** invent work. Pull only from the existing open `bd`
+  backlog (`bd ready`); pick the next bead to advance. File a new bead only to
+  split an existing one, never to add net-new scope.
+
+Whichever source:
+- Tag any **feature-level** bead (one that becomes its own worktree + PR) with
+  the `feature` label so it appears on the board; leave granular sub-tasks
+  unlabelled (they roll up).
 - Identify the **single highest-leverage safe move** this pulse can make. Prefer
   an epic (`po run epic`) when multiple children are ready; launch independent
   workstreams in parallel when their dependencies, write scopes, and approval
@@ -51,9 +61,19 @@ Also read the goal/strategy docs if present (`goal.md`, `ROADMAP.md`,
 - **Coalesce duplicates.** Do not re-propose or re-launch work that is already
   in progress or already represented by an open bead / open `bd human` gate.
 
-### 3. Approval gate — propose before you schedule
+### 3. Inbound gate — `work_ask = {{work_ask}}`
 
-This workspace runs in **`approval_mode = {{approval_mode}}`**.
+This is the INBOUND involvement axis (what you take on). It is independent of
+the OUTBOUND `merge_mode = {{merge_mode}}` (how a finished PR reaches main — the
+PR Sheriff handles that; not your concern here).
+
+- **`gate`** — propose before you schedule. Do **not** run `po run` for new work;
+  file a `human` gate (below) and wait. Only run `po run` to execute a gate the
+  operator has already answered "yes".
+- **`auto`** — dispatch the highest-leverage safe move directly via `po run`, each
+  feature in its own worktree/branch. No inbound gate. (You still never do the
+  consequential/irreversible things in the never-without-asking list below —
+  force-push, prod deploy, schema/data migration, spend — gate those regardless.)
 
 **How a gate works here** (beads `human`-label model):
 - To **propose** work, file a gate — create a `human`-labeled bead whose title is
@@ -72,18 +92,9 @@ This workspace runs in **`approval_mode = {{approval_mode}}`**.
   response comment. If the response is affirmative, run the `po run …` recorded
   in the gate's description. If it was a "no"/dismissed, do not relaunch.
 
-**Apply the mode before dispatching any `po run`:**
-
-- **`always`** — *every* dispatch needs the operator's yes. Do **not** run
-  `po run` for new work; file a gate (above) and wait. Only run `po run` to
-  execute a gate the operator has already answered "yes".
-- **`batches`** — a single clearly-safe ready bead may be dispatched directly
-  via `po run`. Epics, multi-bead batches, and anything consequential get a
-  gate first and wait.
-- **`consequential`** — dispatch freely, but file a gate first for consequential
-  moves: force-push, production deploy, schema/data migration, spend,
-  irreversible or operator-facing actions, or more than a handful of parallel
-  dispatches at once.
+**Always gate (regardless of `work_ask`)** the consequential/irreversible moves:
+force-push, production deploy, schema/data migration, spend, operator-facing or
+irreversible actions, or more than a handful of parallel dispatches at once.
 
 Do not re-file a gate that already exists (open in `bd human list`) for the same
 work — coalesce.
@@ -98,15 +109,34 @@ running result, an approval gate, a shared write scope, or a scarce resource.
 ## Dispatching work (reference)
 
 Substantive build/fix/ship work is filed as a bead and dispatched through the
-workspace's installed po formulas:
+workspace's installed po formulas. **Dispatch each feature into its own worktree
+so it becomes one branch → one PR**, which is the unit the board and the PR
+Sheriff operate on. A standalone feature gets its `wts-<id>` branch from
+`software-dev-full-wts` (or `epic-wts` for a multi-child epic):
 
 ```bash
-po run software-dev-full --issue-id <id> --rig <name> --rig-path {{workspace_dir}}
-po run epic             --epic-id  <id> --rig <name> --rig-path {{workspace_dir}}
+po run software-dev-full-wts --issue-id <id> --rig <name> --rig-path {{workspace_dir}}
+po run epic-wts              --epic-id  <id> --rig <name> --rig-path {{workspace_dir}}
 ```
 
-Use `software-dev-fast` for mechanical/single-file work, `software-dev-full`
-for substantive logic. For epics with children, prefer `po run epic`.
+`full-wts` runs the full pipeline in an isolated worktree and, in ADE mode (this
+workspace has `.ade/settings.toml`), hands the finished branch to the PR Sheriff
+instead of merging to main. `software-dev-fast-wts` is cheaper but only isolates
+when run as a child under an `epic-wts` worktree — use it for an epic's
+sub-tasks, not a standalone feature that needs its own PR.
+
+**Stamp the merge metadata** on each feature bead so the PR Sheriff can act
+mechanically when it lands (the `-wts` formulas run on branch `wts-<id>`):
+
+```bash
+bd update <id> --add-label feature \
+  --set-metadata branch="wts-<id>" \
+  --set-metadata target="main" \
+  --set-metadata merge_strategy="{{merge_strategy}}"
+```
+
+The OUTBOUND merge (CI → review → main) is the PR Sheriff's job under
+`merge_mode = {{merge_mode}}` — you do not merge or gate merges yourself.
 
 ## How you talk
 

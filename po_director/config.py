@@ -13,14 +13,30 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 CONFIG_NAME = ".director.toml"
+ADE_CONFIG_NAME = ".ade/settings.toml"  # consolidated, agent-writable
 
 DEFAULT_PULSE_CRON = "*/10 * * * *"
 DEFAULT_REFLECT_CRON = "0 13 * * *"  # daily at 13:00 local
 DEFAULT_GOAL_PATH = "goal.md"
 DEFAULT_NORTH_STAR = "open issues burned down"
-DEFAULT_APPROVAL_MODE = "always"
 
+# Involvement — two independent axes (see ade-merge-refinery-plan.md).
+# INBOUND (what the director takes on): work_source x work_ask, a 2x2.
+DEFAULT_WORK_SOURCE = "ideate"  # ideate (from goal) | issues (existing backlog only)
+DEFAULT_WORK_ASK = "gate"  # gate (propose, wait) | auto (dispatch autonomously)
+WORK_SOURCES = ("ideate", "issues")
+WORK_ASKS = ("gate", "auto")
+# OUTBOUND (how a green PR reaches main): the PR Sheriff.
+DEFAULT_MERGE_MODE = "auto"  # auto | human | approve-all | ai-approve-all
+MERGE_MODES = ("auto", "human", "approve-all", "ai-approve-all")
+DEFAULT_MERGE_STRATEGY = "pr"  # pr (push + open PR) | direct (merge to main)
+MERGE_STRATEGIES = ("pr", "direct")
+
+# Legacy single-axis approval_mode (pre-2x2). All three values were "ask"
+# variants, so they migrate to work_ask="gate".
+DEFAULT_APPROVAL_MODE = "always"
 APPROVAL_MODES = ("always", "batches", "consequential")
+_LEGACY_APPROVAL_TO_ASK = {"always": "gate", "batches": "gate", "consequential": "gate"}
 
 
 @dataclass(slots=True)
@@ -33,15 +49,24 @@ class DirectorConfig:
     slack_channel: str | None = None
     pulse_cron: str = DEFAULT_PULSE_CRON
     reflect_cron: str = DEFAULT_REFLECT_CRON
-    approval_mode: str = DEFAULT_APPROVAL_MODE
+    # Involvement axes.
+    work_source: str = DEFAULT_WORK_SOURCE
+    work_ask: str = DEFAULT_WORK_ASK
+    merge_mode: str = DEFAULT_MERGE_MODE
+    merge_strategy: str = DEFAULT_MERGE_STRATEGY
+    ci_cmd: str | None = None  # repo CI command; agents may detect + write this
 
     def __post_init__(self) -> None:
-        if self.approval_mode not in APPROVAL_MODES:
+        self._check("work_source", self.work_source, WORK_SOURCES)
+        self._check("work_ask", self.work_ask, WORK_ASKS)
+        self._check("merge_mode", self.merge_mode, MERGE_MODES)
+        self._check("merge_strategy", self.merge_strategy, MERGE_STRATEGIES)
+
+    @staticmethod
+    def _check(name: str, val: str, allowed: tuple[str, ...]) -> None:
+        if val not in allowed:
             raise ValueError(
-                "approval_mode must be one of "
-                + ", ".join(APPROVAL_MODES)
-                + "; got "
-                + repr(self.approval_mode)
+                name + " must be one of " + ", ".join(allowed) + "; got " + repr(val)
             )
 
     @property
@@ -57,20 +82,68 @@ def config_path(workspace_dir: str | Path) -> Path:
     return Path(workspace_dir) / CONFIG_NAME
 
 
-def load_config(workspace_dir: str | Path) -> DirectorConfig:
-    """Load `.director.toml` from a workspace, falling back to defaults.
+def ade_config_path(workspace_dir: str | Path) -> Path:
+    return Path(workspace_dir) / ADE_CONFIG_NAME
 
-    Unknown keys in the file are ignored so a newer config can't crash an older
-    pack. `workspace_dir` from the file is overridden by the caller's path (the
-    file may have been moved/copied).
+
+def _flatten_ade(data: dict[str, object]) -> dict[str, object]:
+    """Map `.ade/settings.toml` nested tables onto DirectorConfig kwargs.
+
+    [goals].north_star, [involvement].{work_source,work_ask,merge_mode},
+    [merge].{strategy->merge_strategy, ci_cmd}.
     """
-    path = config_path(workspace_dir)
-    data: dict[str, object] = {}
-    if path.is_file():
-        with path.open("rb") as fh:
+    out: dict[str, object] = {}
+    goals = data.get("goals")
+    if isinstance(goals, dict) and "north_star" in goals:
+        out["north_star"] = goals["north_star"]
+    inv = data.get("involvement")
+    if isinstance(inv, dict):
+        for key in ("work_source", "work_ask", "merge_mode"):
+            if key in inv:
+                out[key] = inv[key]
+    merge = data.get("merge")
+    if isinstance(merge, dict):
+        if "strategy" in merge:
+            out["merge_strategy"] = merge["strategy"]
+        if "ci_cmd" in merge:
+            out["ci_cmd"] = merge["ci_cmd"]
+    return out
+
+
+def load_config(workspace_dir: str | Path) -> DirectorConfig:
+    """Resolve workspace config from `.ade/settings.toml` (preferred) layered
+    over legacy `.director.toml`.
+
+    Precedence: `.ade/settings.toml` (nested tables) wins; `.director.toml`
+    (flat, legacy) fills gaps. A legacy `approval_mode` migrates to `work_ask`.
+    Unknown keys are ignored so a newer config can't crash an older pack.
+    `workspace_dir` from a file is overridden by the caller's path.
+    """
+    known = set(DirectorConfig.__dataclass_fields__)
+    kwargs: dict[str, object] = {}
+
+    # Legacy flat .director.toml first (lowest precedence).
+    legacy = config_path(workspace_dir)
+    if legacy.is_file():
+        with legacy.open("rb") as fh:
             data = tomllib.load(fh)
-    known = {f for f in DirectorConfig.__dataclass_fields__}  # noqa: C416
-    kwargs = {key: val for key, val in data.items() if key in known}
+        for key, val in data.items():
+            if key in known:
+                kwargs[key] = val
+        approval = data.get("approval_mode")
+        if isinstance(approval, str) and "work_ask" not in data:
+            kwargs["work_ask"] = _LEGACY_APPROVAL_TO_ASK.get(approval, DEFAULT_WORK_ASK)
+
+    # .ade/settings.toml overrides legacy.
+    ade = ade_config_path(workspace_dir)
+    if ade.is_file():
+        with ade.open("rb") as fh:
+            ade_data = tomllib.load(fh)
+        for key, val in _flatten_ade(ade_data).items():
+            if key in known:
+                kwargs[key] = val
+
+    kwargs.pop("workspace_dir", None)
     kwargs["workspace_dir"] = str(Path(workspace_dir).resolve())
     return DirectorConfig(**kwargs)  # type: ignore[arg-type]
 

@@ -86,7 +86,10 @@ def build_prompt(cfg: DirectorConfig, role: str, **extra: object) -> str:
         "workspace_dir": cfg.workspace_dir,
         "goal": _read_goal(cfg),
         "north_star": cfg.north_star,
-        "approval_mode": cfg.approval_mode,
+        "work_source": cfg.work_source,
+        "work_ask": cfg.work_ask,
+        "merge_mode": cfg.merge_mode,
+        "merge_strategy": cfg.merge_strategy,
         "board": build_board(cfg),
         "memory": _latest_handoff(cfg),
     }
