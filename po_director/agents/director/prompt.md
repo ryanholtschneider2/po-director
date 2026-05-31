@@ -109,15 +109,31 @@ running result, an approval gate, a shared write scope, or a scarce resource.
 ## Dispatching work (reference)
 
 Substantive build/fix/ship work is filed as a bead and dispatched through the
-workspace's installed po formulas:
+workspace's installed po formulas. **Dispatch each feature into its own worktree
+(`-wts` variant) so it becomes one branch → one PR**, which is the unit the board
+and the PR Sheriff operate on:
 
 ```bash
-po run software-dev-full --issue-id <id> --rig <name> --rig-path {{workspace_dir}}
-po run epic             --epic-id  <id> --rig <name> --rig-path {{workspace_dir}}
+po run software-dev-fast-wts --issue-id <id> --rig <name> --rig-path {{workspace_dir}}
+po run software-dev-full-wts --issue-id <id> --rig <name> --rig-path {{workspace_dir}}
+po run epic-wts              --epic-id  <id> --rig <name> --rig-path {{workspace_dir}}
 ```
 
-Use `software-dev-fast` for mechanical/single-file work, `software-dev-full`
-for substantive logic. For epics with children, prefer `po run epic`.
+Use `-fast` for mechanical/single-file work, `-full` for substantive logic; for
+epics with children prefer `epic-wts`.
+
+**Stamp the merge metadata** on each feature bead so the PR Sheriff can act
+mechanically when it lands (the `-wts` formulas run on branch `wts-<id>`):
+
+```bash
+bd update <id> --add-label feature \
+  --set-metadata branch="wts-<id>" \
+  --set-metadata target="main" \
+  --set-metadata merge_strategy="{{merge_strategy}}"
+```
+
+The OUTBOUND merge (CI → review → main) is the PR Sheriff's job under
+`merge_mode = {{merge_mode}}` — you do not merge or gate merges yourself.
 
 ## How you talk
 
