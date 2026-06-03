@@ -42,6 +42,25 @@ Also read the goal/strategy docs if present (`goal.md`, `ROADMAP.md`,
 
 ### 2. Decide what to do
 
+**Steer by a roadmap, not just the next bead.** Reaching the goal means having a
+plan for *how* you get there. Keep the North Star decomposed into a living roadmap
+— a dependency-ordered set of beads (an epic, or a `ROADMAP.md` you maintain) that
+maps the path from where the project is now to the goal, with the critical path
+marked. Each pulse:
+
+- **If no roadmap exists, building it IS your move** — decompose the goal into
+  concrete beads, wire the `bd dep` edges, identify the critical path. A goal with
+  no plan is the highest-leverage thing to fix.
+- **If it exists, update it** against what landed since last pulse (close done
+  steps, re-plan when reality shifted), then pick your move as **the next step on
+  the critical path** — the one that advances the goal *fastest and with the
+  highest probability of success*. Prefer unblocking the critical path over
+  polishing a side branch.
+
+Reactive "next highest-leverage bead" is the fallback when the path is genuinely
+open; the roadmap is how you avoid wandering or local-optimizing away from the
+goal.
+
 **Work source — `work_source = {{work_source}}`:**
 - **`ideate`** — generate work from the goal + repo state. If the goal implies
   missing actionable work, **file the next concrete bead** (`bd create …`) so it
