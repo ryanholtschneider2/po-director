@@ -157,28 +157,48 @@ the operator" blocks that one thread, not your whole pulse.
 Substantive build/fix/ship work is filed as a bead and dispatched through the
 workspace's installed po formulas. **Dispatch each feature into its own worktree
 so it becomes one branch → one PR**, which is the unit the board and the PR
-Sheriff operate on. A standalone feature gets its `wts-<id>` branch from
-`software-dev-full-wts` (or `epic-wts` for a multi-child epic):
+Sheriff operate on. **The default formula is `software-dev-agentic`**: one
+prompt-driven worker that plans, builds, tests, and opens its own worktree off
+`main` (branch `agentic-<id>`), ending at a PR, plus one critic that verifies
+the goal. For a multi-child epic, stamp every child to the agentic formula and
+dispatch the epic:
 
 ```bash
-po run software-dev-full-wts --issue-id <id> --rig <name> --rig-path {{workspace_dir}}
-po run epic-wts              --epic-id  <id> --rig <name> --rig-path {{workspace_dir}}
+po run software-dev-agentic --issue-id <id> --rig <name> --rig-path {{workspace_dir}}
+
+# epics: stamp each child first (unstamped children fall back to the heavyweight default)
+bd update <child-id> --set-metadata "po.formula=software-dev-agentic"
+po run epic --epic-id <id> --rig <name> --rig-path {{workspace_dir}}
 ```
 
-`full-wts` runs the full pipeline in an isolated worktree and, in ADE mode (this
-workspace has `.ade/settings.toml`), hands the finished branch to the PR Sheriff
-instead of merging to main. `software-dev-fast-wts` is cheaper but only isolates
-when run as a child under an `epic-wts` worktree — use it for an epic's
-sub-tasks, not a standalone feature that needs its own PR.
+The deterministic `-wts` flows (`software-dev-full-wts`, `epic-wts`,
+`software-dev-fast-wts`) remain installed as fallbacks — use them only when a
+run genuinely needs the heavyweight critic/verifier pipeline or when resuming an
+old `-wts` run. They run on branch `wts-<id>` and hand off to the Sheriff
+themselves in ADE mode.
 
-**Stamp the merge metadata** on each feature bead so the PR Sheriff can act
-mechanically when it lands (the `-wts` formulas run on branch `wts-<id>`):
+**Stamp the merge metadata** on each feature bead at dispatch time so the PR
+Sheriff can act mechanically when the PR lands (agentic runs on branch
+`agentic-<id>`; `-wts` runs on `wts-<id>`):
 
 ```bash
 bd update <id> --add-label feature \
-  --set-metadata branch="wts-<id>" \
+  --set-metadata branch="agentic-<id>" \
   --set-metadata target="main" \
   --set-metadata merge_strategy="{{merge_strategy}}"
+```
+
+**Sweep finished agentic PRs to the Sheriff.** The `-wts` flows trigger the
+Sheriff themselves; `software-dev-agentic` does not — the worker opens the PR
+and the flow closes the bead on the critic's pass, but nothing merges. Each
+pulse, as part of herding: for any feature bead whose agentic run has completed
+with an open unmerged PR and no `review` label, add the label and fire the
+Sheriff detached (the bead may already be closed — that is fine, do not reopen):
+
+```bash
+bd update <id> --add-label review
+setsid po run pr-sheriff --workspace-dir {{workspace_dir}} --feature-id <id> \
+  >/dev/null 2>&1 < /dev/null &
 ```
 
 The OUTBOUND merge (CI → review → main) is the PR Sheriff's job under
