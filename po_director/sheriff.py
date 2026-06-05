@@ -20,7 +20,7 @@ from pathlib import Path
 from prefect import flow
 
 from po_director.config import load_config
-from po_director.coordinator import _gate_map, _log, _make_session
+from po_director.coordinator import _gate_map, _log, _make_session, persona_role
 from po_director.notify import post_slack
 from po_director.render import build_prompt
 
@@ -72,7 +72,7 @@ def pr_sheriff(
         return {"feature_id": feature_id, "verdict": None, "dry_run": True, "posted": 0}
 
     before = _gate_map(cfg.workspace_dir)
-    session = _make_session(cfg, "pr-sheriff", backend)
+    session = _make_session(cfg, persona_role(cfg, "pr-sheriff"), backend)
     session.prompt(
         build_prompt(
             cfg,

@@ -47,17 +47,17 @@ def test_gate_map_bad_json_is_empty(monkeypatch) -> None:
 
 
 def test_dry_run_short_circuits(tmp_path: Path, monkeypatch) -> None:
-    # If the agent turn were attempted, build_prompt/_make_session would run;
+    # If the agent turn were attempted, persona_prompt/_make_session would run;
     # assert they are never touched.
     called = {"prompt": False}
-    monkeypatch.setattr(coord, "build_prompt", lambda *a, **k: called.__setitem__("prompt", True) or "x")
+    monkeypatch.setattr(coord, "persona_prompt", lambda *a, **k: called.__setitem__("prompt", True) or "x")
     out = coord.director_pulse.fn(_ws(tmp_path), dry_run=True)
     assert out["dry_run"] is True and out["quiet"] is True
     assert called["prompt"] is False
 
 
 def test_quiet_path_posts_nothing(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr(coord, "build_prompt", lambda *a, **k: "PROMPT")
+    monkeypatch.setattr(coord, "persona_prompt", lambda *a, **k: "PROMPT")
     # same gate present before and after -> nothing new
     monkeypatch.setattr(coord, "_gate_map", lambda ws: {"director-9": "existing gate"})
     posts: list[tuple] = []
@@ -72,7 +72,7 @@ def test_quiet_path_posts_nothing(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_new_gate_posts_once(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr(coord, "build_prompt", lambda *a, **k: "PROMPT")
+    monkeypatch.setattr(coord, "persona_prompt", lambda *a, **k: "PROMPT")
     # before: empty; after: one new gate (a multi-line title must still count as 1)
     snapshots = iter([{}, {"director-1": "Dispatch the auth fix via software-dev-full?"}])
     monkeypatch.setattr(coord, "_gate_map", lambda ws: next(snapshots))
@@ -90,7 +90,7 @@ def test_new_gate_posts_once(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_new_gate_no_channel_no_post(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr(coord, "build_prompt", lambda *a, **k: "PROMPT")
+    monkeypatch.setattr(coord, "persona_prompt", lambda *a, **k: "PROMPT")
     snapshots = iter([{}, {"director-1": "proposal"}])
     monkeypatch.setattr(coord, "_gate_map", lambda ws: next(snapshots))
     posts: list[tuple] = []
@@ -104,7 +104,7 @@ def test_new_gate_no_channel_no_post(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_reflect_posts_when_output(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr(coord, "build_prompt", lambda *a, **k: "PROMPT")
+    monkeypatch.setattr(coord, "reflect_prompt", lambda *a, **k: "PROMPT")
     posts: list[tuple] = []
     monkeypatch.setattr(coord, "post_slack", lambda *a, **k: posts.append(a) or True)
     out = coord.director_reflect.fn(

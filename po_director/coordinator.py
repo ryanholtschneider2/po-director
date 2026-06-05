@@ -23,14 +23,26 @@ from prefect.exceptions import MissingContextError
 from prefect_orchestration.agent_session import AgentSession
 from prefect_orchestration.backend_select import select_default_backend
 
-from po_director.config import DirectorConfig, load_config
+from po_director.config import DEFAULT_PERSONA, DirectorConfig, load_config
 from po_director.notify import post_slack
-from po_director.render import build_prompt
+from po_director.render import persona_prompt, reflect_prompt
 
 logger = logging.getLogger(__name__)
 
 _PROPOSAL_TITLE = "Director proposal — needs your approval"
 _REFLECTION_TITLE = "Director — daily reflection"
+
+
+def persona_role(cfg: DirectorConfig, base: str) -> str:
+    """Session/tmux role label for a builtin role under the active persona.
+
+    Byte-identical to `base` for the default `director` persona (so existing
+    sessions aren't orphaned); persona-prefixed otherwise so several personas
+    can run against one workspace without colliding on session names.
+    """
+    if cfg.persona == DEFAULT_PERSONA:
+        return base
+    return cfg.persona + "-" + base
 
 
 def _log() -> logging.Logger | logging.LoggerAdapter:
@@ -99,8 +111,8 @@ def director_pulse(
         return {"quiet": True, "dry_run": True, "new_gates": 0, "posted": 0}
 
     before = _gate_map(cfg.workspace_dir)
-    session = _make_session(cfg, "director", backend)
-    result = session.prompt(build_prompt(cfg, "director"))
+    session = _make_session(cfg, cfg.persona, backend)
+    result = session.prompt(persona_prompt(cfg))
     after = _gate_map(cfg.workspace_dir)
 
     new_ids = sorted(set(after) - set(before))
@@ -146,8 +158,8 @@ def director_reflect(
         log.info("director-reflect dry-run: skipping agent turn for %s", cfg.workspace_dir)
         return {"dry_run": True, "posted": 0}
 
-    session = _make_session(cfg, "reflector", backend)
-    result = session.prompt(build_prompt(cfg, "reflector"))
+    session = _make_session(cfg, persona_role(cfg, "reflector"), backend)
+    result = session.prompt(reflect_prompt(cfg))
 
     posted = 0
     if result.strip() and post_slack(cfg.slack_channel, _REFLECTION_TITLE, result):

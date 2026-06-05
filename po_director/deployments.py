@@ -17,7 +17,7 @@ from typing import Any
 from prefect.client.schemas.schedules import CronSchedule
 from prefect.deployments.runner import EntrypointType
 
-from po_director.config import DirectorConfig
+from po_director.config import DEFAULT_PERSONA, DirectorConfig
 from po_director.coordinator import director_pulse, director_reflect
 
 _MODULE_PATH = {"entrypoint_type": EntrypointType.MODULE_PATH}
@@ -38,8 +38,21 @@ def workspace_slug(workspace_dir: str) -> str:
     return (base or "ws") + "-" + digest
 
 
+def _persona_slug(persona: str) -> str:
+    """Filename-safe slug for a persona name (for deployment-name suffixes)."""
+    return re.sub(r"[^a-zA-Z0-9]+", "-", persona).strip("-") or "persona"
+
+
 def deployment_names(cfg: DirectorConfig) -> tuple[str, str]:
+    """Scheduled pulse + reflect deployment names for this workspace.
+
+    The persona is folded into the slug when it isn't the default `director`,
+    so several personas can run against one workspace without colliding. Names
+    stay byte-identical for the default persona (existing deployments survive).
+    """
     slug = workspace_slug(cfg.workspace_dir)
+    if cfg.persona != DEFAULT_PERSONA:
+        slug = _persona_slug(cfg.persona) + "-" + slug
     return "director-pulse-" + slug, "director-reflect-" + slug
 
 
