@@ -21,6 +21,7 @@ PACKS=(
   "$P/po-formulas-software-dev/parent"
   "$P/po-formulas-software-dev/wts"
   "$P/po-director"
+  "$P/soloco/po-soloco"
 )
 
 argv=(tool install --reinstall --editable "$CORE")
