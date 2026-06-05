@@ -127,6 +127,55 @@ def test_workspace_setting_overrides_persona_default(tmp_path: Path, monkeypatch
     assert cfg.pulse_cron == "*/5 * * * *"  # persona default still fills the gap
 
 
+def test_ade_setting_overrides_persona_default(tmp_path: Path, monkeypatch) -> None:
+    ws = tmp_path / "ws"
+    (ws / ".ade").mkdir(parents=True)
+    # .ade pins a faster pulse; persona default is slower → .ade wins, and the
+    # persona's work_source default still fills the unset gap.
+    (ws / ".ade" / "settings.toml").write_text(
+        '[persona]\nname = "ceo"\n[schedule]\npulse_cron = "*/2 * * * *"\n',
+        encoding="utf-8",
+    )
+    _install_persona(
+        monkeypatch,
+        "ceo",
+        tmp_path / "ceo",
+        config_toml='work_source = "issues"\npulse_cron = "*/30 * * * *"\n',
+    )
+    cfg = load_config(ws)
+    assert cfg.persona == "ceo"
+    assert cfg.pulse_cron == "*/2 * * * *"  # .ade beats persona default
+    assert cfg.work_source == "issues"  # persona default fills the gap
+
+
+def test_full_precedence_chain_end_to_end(tmp_path: Path, monkeypatch) -> None:
+    """built-in < persona default < .director.toml < .ade < CLI (persona_override).
+
+    One knob is pinned at each layer so the winner at every level is observable.
+    """
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    # legacy file: pins work_ask; .ade does NOT touch it → legacy stands for it.
+    (ws / ".director.toml").write_text('work_ask = "auto"\n', encoding="utf-8")
+    (ws / ".ade").mkdir(parents=True)
+    (ws / ".ade" / "settings.toml").write_text(
+        '[goals]\nnorth_star = "ade-star"\n', encoding="utf-8"
+    )
+    _install_persona(
+        monkeypatch,
+        "ceo",
+        tmp_path / "ceo",
+        # persona default: reflect_cron unset everywhere else → persona wins it.
+        config_toml='reflect_cron = "0 6 * * *"\nwork_source = "issues"\n',
+    )
+    cfg = load_config(ws, persona_override="ceo")
+    assert cfg.persona == "ceo"  # CLI override wins the persona field
+    assert cfg.north_star == "ade-star"  # .ade layer
+    assert cfg.work_ask == "auto"  # legacy .director.toml layer
+    assert cfg.reflect_cron == "0 6 * * *"  # persona-default layer
+    assert cfg.pulse_cron == DEFAULT_PULSE_CRON  # nothing set → built-in default
+
+
 def test_persona_override_beats_file_persona(tmp_path: Path, monkeypatch) -> None:
     ws = tmp_path / "ws"
     ws.mkdir()
