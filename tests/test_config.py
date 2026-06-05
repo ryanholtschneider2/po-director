@@ -72,3 +72,63 @@ def test_bad_work_ask_raises(tmp_path: Path) -> None:
 def test_bad_merge_mode_raises(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="merge_mode"):
         DirectorConfig(workspace_dir=str(tmp_path), merge_mode="nope")
+
+
+# ─── minimal corp-dir contract: full .ade/settings.toml mapping ──────────
+
+
+def _write_ade(workspace: Path, body: str) -> None:
+    ade = workspace / ".ade"
+    ade.mkdir(parents=True, exist_ok=True)
+    (ade / "settings.toml").write_text(body, encoding="utf-8")
+
+
+def test_ade_minimal_corp_dir_contract(tmp_path: Path) -> None:
+    """A new corp dir needs only goal.md plus a short .ade/settings.toml
+    expressing persona, north_star, slack_channel, and optional cron overrides.
+    """
+    _write_ade(
+        tmp_path,
+        "\n".join(
+            [
+                "[goals]",
+                'north_star = "MRR > 10k"',
+                "[notify]",
+                'slack_channel = "C08LB4V9ZJ8"',
+                "[schedule]",
+                'pulse_cron = "*/15 * * * *"',
+                'reflect_cron = "0 9 * * *"',
+            ]
+        )
+        + "\n",
+    )
+    cfg = load_config(tmp_path)
+    assert cfg.north_star == "MRR > 10k"
+    assert cfg.slack_channel == "C08LB4V9ZJ8"
+    assert cfg.pulse_cron == "*/15 * * * *"
+    assert cfg.reflect_cron == "0 9 * * *"
+
+
+def test_ade_goal_path_override(tmp_path: Path) -> None:
+    _write_ade(tmp_path, '[goals]\ngoal_path = "strategy.md"\n')
+    assert load_config(tmp_path).goal_path == "strategy.md"
+
+
+def test_ade_slack_and_cron_default_when_absent(tmp_path: Path) -> None:
+    # Only persona/north_star set → slack stays None, crons keep dataclass defaults.
+    _write_ade(tmp_path, '[goals]\nnorth_star = "x"\n')
+    cfg = load_config(tmp_path)
+    assert cfg.slack_channel is None
+    assert cfg.pulse_cron == DEFAULT_PULSE_CRON
+
+
+def test_ade_overrides_legacy_director_toml(tmp_path: Path) -> None:
+    (tmp_path / ".director.toml").write_text(
+        'north_star = "legacy"\nslack_channel = "OLD"\n', encoding="utf-8"
+    )
+    _write_ade(
+        tmp_path, '[goals]\nnorth_star = "new"\n[notify]\nslack_channel = "NEW"\n'
+    )
+    cfg = load_config(tmp_path)
+    assert cfg.north_star == "new"  # .ade wins over .director.toml
+    assert cfg.slack_channel == "NEW"

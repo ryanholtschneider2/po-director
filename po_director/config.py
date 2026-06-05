@@ -94,17 +94,25 @@ def ade_config_path(workspace_dir: str | Path) -> Path:
 def _flatten_ade(data: dict[str, object]) -> dict[str, object]:
     """Map `.ade/settings.toml` nested tables onto DirectorConfig kwargs.
 
-    [persona].name, [goals].north_star,
+    [persona].name, [goals].{north_star, goal_path},
     [involvement].{work_source,work_ask,merge_mode},
-    [merge].{strategy->merge_strategy, ci_cmd}.
+    [merge].{strategy->merge_strategy, ci_cmd},
+    [notify].slack_channel, [schedule].{pulse_cron, reflect_cron}.
+
+    Together these let a corp dir express the whole minimal contract — persona,
+    north_star, slack_channel, and optional cron overrides — in one short file
+    (see the README "Standing up a workspace" section). Unknown tables/keys are
+    left alone; load_config filters to known DirectorConfig fields anyway.
     """
     out: dict[str, object] = {}
     persona = data.get("persona")
     if isinstance(persona, dict) and "name" in persona:
         out["persona"] = persona["name"]
     goals = data.get("goals")
-    if isinstance(goals, dict) and "north_star" in goals:
-        out["north_star"] = goals["north_star"]
+    if isinstance(goals, dict):
+        for key in ("north_star", "goal_path"):
+            if key in goals:
+                out[key] = goals[key]
     inv = data.get("involvement")
     if isinstance(inv, dict):
         for key in ("work_source", "work_ask", "merge_mode"):
@@ -116,6 +124,14 @@ def _flatten_ade(data: dict[str, object]) -> dict[str, object]:
             out["merge_strategy"] = merge["strategy"]
         if "ci_cmd" in merge:
             out["ci_cmd"] = merge["ci_cmd"]
+    notify = data.get("notify")
+    if isinstance(notify, dict) and "slack_channel" in notify:
+        out["slack_channel"] = notify["slack_channel"]
+    schedule = data.get("schedule")
+    if isinstance(schedule, dict):
+        for key in ("pulse_cron", "reflect_cron"):
+            if key in schedule:
+                out[key] = schedule[key]
     return out
 
 

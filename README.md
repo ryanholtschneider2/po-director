@@ -33,6 +33,76 @@ You also need a Prefect worker running so the crons execute:
 prefect worker start --pool po
 ```
 
+## Standing up a workspace
+
+A new corp dir needs exactly two things: a `goal.md` and a short
+`.ade/settings.toml`. Everything else falls back to the persona's defaults and
+the built-in defaults, so the file stays to the few knobs that actually differ
+per corp.
+
+```toml
+# <corp-dir>/.ade/settings.toml — the minimal contract
+[persona]
+name = "ceo"                       # which standing agent runs (default: director)
+
+[goals]
+north_star = "MRR > $10k/mo"       # the metric the persona holds
+
+[notify]
+slack_channel = "C08LB4V9ZJ8"      # where proposals + reflections post
+
+[schedule]                         # optional — omit to keep the persona/built-in crons
+pulse_cron = "*/15 * * * *"
+reflect_cron = "0 9 * * *"
+```
+
+Pair it with a one-line goal:
+
+```bash
+mkdir -p mycorp/.ade
+$EDITOR mycorp/.ade/settings.toml        # the file above
+printf '# Goal\n\nShip the thing.\n' > mycorp/goal.md
+cd mycorp && po director start           # reads .ade/settings.toml, no re-prompt
+```
+
+`po director start` does NOT re-prompt when `.ade/settings.toml` (or a legacy
+`.director.toml`) already exists — the file is the source of truth.
+
+### Config precedence
+
+Every knob resolves through the same layering. Highest wins:
+
+| Layer | Source | Example |
+|---|---|---|
+| **CLI flags** | `po director start --persona … --channel …` | one-off overrides |
+| **Workspace file** | `.ade/settings.toml`, then legacy `.director.toml` under it | per-corp settings |
+| **Persona defaults** | the persona's `config.toml` (shipped by its pack) | `ceo` runs `issues`/`auto` by default |
+| **Built-in defaults** | `DirectorConfig` field defaults | `director`, `ideate`/`gate`, 10-min pulse |
+
+So a persona pack sets sensible defaults for its kind of corp, an individual
+corp dir overrides only what differs in its `.ade/settings.toml`, and a CLI
+flag wins for a one-off run. The `.ade/settings.toml` tables map onto config
+keys as: `[persona].name`, `[goals].{north_star, goal_path}`,
+`[involvement].{work_source, work_ask, merge_mode}`,
+`[merge].{strategy, ci_cmd}`, `[notify].slack_channel`, and
+`[schedule].{pulse_cron, reflect_cron}`. Unknown tables/keys are ignored, so a
+newer config never crashes an older pack.
+
+### Why no `extends =` (shared org-level base config)
+
+Considered for `po-director-gt9`: an `extends = "../shared/base.toml"` key so
+many corp dirs could inherit one org-level overrides file. **Decided against it.**
+Cross-corp shared defaults already have a home — the **persona's `config.toml`**.
+A SoloCo org standardizing on, say, `auto` work-ask and a 15-minute pulse for
+all its corps ships those as one persona pack; every corp that selects that
+persona inherits them and overrides only its own `north_star` / `slack_channel`.
+That covers the real shared-base use case without a second inheritance
+mechanism, a file-path resolution story (relative to what?), or cycle /
+precedence ambiguity between `extends` and persona defaults. If a future need
+genuinely can't be expressed as a persona default (per-corp values that must be
+shared but aren't persona-shaped), revisit then; until then persona defaults are
+the one layering seam.
+
 ## How it works
 
 - **`director-pulse`** (every 10 min) — gather goal + board + memory → render
@@ -42,7 +112,12 @@ prefect worker start --pool po
 - **`director-reflect`** (daily) — a one-page written reflection on the goal,
   posted to Slack.
 
-## Configuration (`<workspace>/.director.toml`)
+## Configuration reference
+
+Full list of resolved knobs. For a new corp dir prefer the consolidated
+`.ade/settings.toml` (see [Standing up a workspace](#standing-up-a-workspace));
+the flat `.director.toml` below is the legacy/agent-written form and sits one
+layer *under* `.ade/settings.toml`.
 
 | Key | Default | Meaning |
 |---|---|---|
