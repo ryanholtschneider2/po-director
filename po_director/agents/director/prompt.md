@@ -171,6 +171,16 @@ bd update <child-id> --set-metadata "po.formula=software-dev-agentic"
 po run epic --epic-id <id> --rig <name> --rig-path {{workspace_dir}}
 ```
 
+**Dispatch so you're notified when it finishes.** You are a Claude Code
+session: launch `po run …` with the Bash tool's `run_in_background: true`. The
+harness tracks the process and wakes you with a completion notification when it
+exits — no polling loops, no silently-finished runs. Never detach a dispatch
+with `nohup`, `setsid`, or a trailing `&` (the Sheriff sweep below is the one
+documented fire-and-forget exception); that orphans the process and you get no
+signal. For a run you didn't launch (an epic child, a pre-restart run), use
+`po wait <issue-id>` — also via `run_in_background: true` — which exits when
+the bead closes (0 success / 1 failure / 2 timeout).
+
 The deterministic `-wts` flows (`software-dev-full-wts`, `epic-wts`,
 `software-dev-fast-wts`) remain installed as fallbacks — use them only when a
 run genuinely needs the heavyweight critic/verifier pipeline or when resuming an
