@@ -79,8 +79,34 @@ def _gate_map(workspace_dir: str) -> dict[str, str]:
     return {str(r["id"]): str(r.get("title", "")) for r in rows if isinstance(r, dict) and "id" in r}
 
 
-def _make_session(cfg: DirectorConfig, role: str, backend: object | None) -> AgentSession:
-    be = backend if backend is not None else select_default_backend()()
+def _build_backend(factory: object, issue: str, role: str) -> object:
+    """Instantiate a backend factory, plumbing `issue`/`role` when required.
+
+    Backend constructors have different shapes: the tmux backends
+    (`TmuxClaudeBackend`, `TmuxCodexBackend`) require `issue` and `role`
+    positional args for their session names, while the stateless backends
+    (`ClaudeCliBackend`, `CodexCliBackend`, `StubBackend`) take none. Try the
+    issue+role shape first, fall back to zero-arg — mirrors core's
+    `prompt_formula._make_backend`.
+    """
+    try:
+        return factory(issue=issue, role=role)  # type: ignore[operator]
+    except TypeError:
+        return factory()  # type: ignore[operator]
+
+
+def _make_session(
+    cfg: DirectorConfig,
+    role: str,
+    backend: object | None,
+    *,
+    issue: str = "director",
+) -> AgentSession:
+    be = (
+        backend
+        if backend is not None
+        else _build_backend(select_default_backend(), issue, role)
+    )
     return AgentSession(
         role=role,
         repo_path=Path(cfg.workspace_dir),
