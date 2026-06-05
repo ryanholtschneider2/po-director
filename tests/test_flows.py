@@ -120,3 +120,51 @@ def test_gate_map_handles_null(monkeypatch) -> None:
         stdout = "null"
     monkeypatch.setattr(coord.subprocess, "run", lambda *a, **k: P())
     assert coord._gate_map("/tmp/ws") == {}
+
+
+def test_build_backend_passes_issue_role_to_tmux_factory() -> None:
+    # Regression for po-director-3f5: the auto-selected tmux backend requires
+    # (issue, role); _build_backend must supply them rather than calling the
+    # factory with zero args.
+    captured: dict[str, object] = {}
+
+    class TmuxLike:
+        def __init__(self, *, issue: str, role: str) -> None:
+            captured["issue"] = issue
+            captured["role"] = role
+
+    be = coord._build_backend(TmuxLike, "feat-1", "pr-sheriff")
+    assert isinstance(be, TmuxLike)
+    assert captured == {"issue": "feat-1", "role": "pr-sheriff"}
+
+
+def test_build_backend_falls_back_to_zero_arg_factory() -> None:
+    # Stateless backends (ClaudeCliBackend / StubBackend) take no args;
+    # _build_backend must fall through to zero-arg construction.
+    class StatelessLike:
+        def __init__(self) -> None:
+            self.made = True
+
+    be = coord._build_backend(StatelessLike, "feat-1", "persona")
+    assert isinstance(be, StatelessLike)
+    assert be.made is True
+
+
+def test_make_session_builds_default_backend_when_none(tmp_path: Path, monkeypatch) -> None:
+    # When no backend is injected, _make_session must construct the
+    # auto-selected factory without crashing on the (issue, role) signature.
+    seen: dict[str, object] = {}
+
+    class TmuxLike:
+        def __init__(self, *, issue: str, role: str) -> None:
+            seen["issue"] = issue
+            seen["role"] = role
+
+    monkeypatch.setattr(coord, "select_default_backend", lambda: TmuxLike)
+    sess = coord._make_session(_make_cfg(tmp_path), "persona", None, issue="feat-9")
+    assert isinstance(sess.backend, TmuxLike)
+    assert seen == {"issue": "feat-9", "role": "persona"}
+
+
+def _make_cfg(tmp_path: Path) -> DirectorConfig:
+    return DirectorConfig(workspace_dir=str(tmp_path))

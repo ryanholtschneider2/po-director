@@ -72,7 +72,9 @@ def pr_sheriff(
         return {"feature_id": feature_id, "verdict": None, "dry_run": True, "posted": 0}
 
     before = _gate_map(cfg.workspace_dir)
-    session = _make_session(cfg, persona_role(cfg, "pr-sheriff"), backend)
+    session = _make_session(
+        cfg, persona_role(cfg, "pr-sheriff"), backend, issue=feature_id
+    )
     session.prompt(
         build_prompt(
             cfg,
