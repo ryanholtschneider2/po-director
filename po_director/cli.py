@@ -51,6 +51,7 @@ def _ensure_config(
     pulse_cron: str | None,
     reflect_cron: str | None,
     north_star: str | None,
+    persona: str | None = None,
 ) -> DirectorConfig:
     """Load-or-create config, prompting for goal/North Star on first run.
 
@@ -59,9 +60,12 @@ def _ensure_config(
     (goal/north_star/involvement live there and override `.director.toml`), so
     when it's present we must NOT re-prompt or we'd shadow the operator's
     settings with a freshly-prompted value.
+
+    A `--persona` flag wins over any persona set in the workspace files and
+    seeds that persona's `config.toml` defaults (under workspace settings).
     """
     existing = config_path(workspace_dir).is_file() or ade_config_path(workspace_dir).is_file()
-    cfg = load_config(workspace_dir)
+    cfg = load_config(workspace_dir, persona_override=persona)
 
     if channel is not None:
         cfg.slack_channel = channel
@@ -145,6 +149,7 @@ def _status(cfg: DirectorConfig) -> str:
         [
             "Director status for " + cfg.workspace_dir,
             "  config:        " + str(config_path(cfg.workspace_dir)),
+            "  persona:       " + cfg.persona,
             "  north_star:    " + cfg.north_star,
             "  work:          " + cfg.work_source + " / " + cfg.work_ask
             + "  (source / ask)",
@@ -174,6 +179,7 @@ def director(
     pulse_cron: str | None = None,
     reflect_cron: str | None = None,
     north_star: str | None = None,
+    persona: str | None = None,
 ) -> str:
     """Start/stop/inspect the Director for a workspace directory.
 
@@ -181,12 +187,18 @@ def director(
       inbound  --work-source ideate|issues  --work-ask gate|auto
       outbound --merge-mode auto|human|approve-all|ai-approve-all  --merge-strategy pr|direct
 
+    `--persona <name>` selects the standing agent's identity (default
+    `director`; packs ship more via the `po.personas` entry-point group). A
+    non-default persona suffixes the deployment + tmux session names so several
+    personas can run against one workspace without colliding.
+
     Examples:
         po director start
         po director start --dir . --channel C08LB4V9ZJ8 --work-source issues --work-ask auto
+        po director start --persona ceo
         po director start --merge-mode human
-        po director status
-        po director stop
+        po director status --persona ceo
+        po director stop --persona ceo
     """
     if action not in _ACTIONS:
         raise ValueError("action must be one of " + ", ".join(_ACTIONS) + "; got " + repr(action))
@@ -204,8 +216,9 @@ def director(
             pulse_cron=pulse_cron,
             reflect_cron=reflect_cron,
             north_star=north_star,
+            persona=persona,
         )
         return _start(cfg)
     if action == "stop":
-        return _stop(load_config(workspace_dir))
-    return _status(load_config(workspace_dir))
+        return _stop(load_config(workspace_dir, persona_override=persona))
+    return _status(load_config(workspace_dir, persona_override=persona))

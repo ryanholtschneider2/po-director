@@ -12,6 +12,8 @@ import tomllib
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from po_director.persona import DEFAULT_PERSONA, load_persona_defaults
+
 CONFIG_NAME = ".director.toml"
 ADE_CONFIG_NAME = ".ade/settings.toml"  # consolidated, agent-writable
 
@@ -55,6 +57,9 @@ class DirectorConfig:
     merge_mode: str = DEFAULT_MERGE_MODE
     merge_strategy: str = DEFAULT_MERGE_STRATEGY
     ci_cmd: str | None = None  # repo CI command; agents may detect + write this
+    # The standing agent's identity. 'director' is the builtin; packs ship more
+    # via the `po.personas` entry-point group (see persona.py).
+    persona: str = DEFAULT_PERSONA
 
     def __post_init__(self) -> None:
         self._check("work_source", self.work_source, WORK_SOURCES)
@@ -89,10 +94,14 @@ def ade_config_path(workspace_dir: str | Path) -> Path:
 def _flatten_ade(data: dict[str, object]) -> dict[str, object]:
     """Map `.ade/settings.toml` nested tables onto DirectorConfig kwargs.
 
-    [goals].north_star, [involvement].{work_source,work_ask,merge_mode},
+    [persona].name, [goals].north_star,
+    [involvement].{work_source,work_ask,merge_mode},
     [merge].{strategy->merge_strategy, ci_cmd}.
     """
     out: dict[str, object] = {}
+    persona = data.get("persona")
+    if isinstance(persona, dict) and "name" in persona:
+        out["persona"] = persona["name"]
     goals = data.get("goals")
     if isinstance(goals, dict) and "north_star" in goals:
         out["north_star"] = goals["north_star"]
@@ -110,19 +119,27 @@ def _flatten_ade(data: dict[str, object]) -> dict[str, object]:
     return out
 
 
-def load_config(workspace_dir: str | Path) -> DirectorConfig:
+def load_config(
+    workspace_dir: str | Path, *, persona_override: str | None = None
+) -> DirectorConfig:
     """Resolve workspace config from `.ade/settings.toml` (preferred) layered
-    over legacy `.director.toml`.
+    over legacy `.director.toml`, with per-persona defaults underneath.
 
-    Precedence: `.ade/settings.toml` (nested tables) wins; `.director.toml`
-    (flat, legacy) fills gaps. A legacy `approval_mode` migrates to `work_ask`.
-    Unknown keys are ignored so a newer config can't crash an older pack.
-    `workspace_dir` from a file is overridden by the caller's path.
+    Precedence (highest wins): `persona_override` (a CLI `--persona` flag) for
+    the persona field; then for every other knob — CLI flags (applied by the
+    caller after this returns) > workspace files (`.ade/settings.toml` over
+    `.director.toml`) > the persona's own `config.toml` defaults > dataclass
+    defaults. A legacy `approval_mode` migrates to `work_ask`. Unknown keys
+    are ignored so a newer config can't crash an older pack. `workspace_dir`
+    from a file is overridden by the caller's path.
+
+    An unknown persona (from a file or `persona_override`) fails loudly via
+    `persona.PersonaError`, listing the available personas.
     """
     known = set(DirectorConfig.__dataclass_fields__)
     kwargs: dict[str, object] = {}
 
-    # Legacy flat .director.toml first (lowest precedence).
+    # Legacy flat .director.toml first (lowest precedence among files).
     legacy = config_path(workspace_dir)
     if legacy.is_file():
         with legacy.open("rb") as fh:
@@ -142,6 +159,13 @@ def load_config(workspace_dir: str | Path) -> DirectorConfig:
         for key, val in _flatten_ade(ade_data).items():
             if key in known:
                 kwargs[key] = val
+
+    # Resolve the effective persona (CLI override > files > default), then layer
+    # its config.toml defaults *under* the workspace settings already gathered.
+    persona = persona_override or kwargs.get("persona") or DEFAULT_PERSONA
+    kwargs["persona"] = persona
+    for key, val in load_persona_defaults(str(persona)).items():
+        kwargs.setdefault(key, val)  # workspace files win over persona defaults
 
     kwargs.pop("workspace_dir", None)
     kwargs["workspace_dir"] = str(Path(workspace_dir).resolve())

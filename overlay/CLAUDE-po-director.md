@@ -10,8 +10,14 @@ approved work via `po run`. No `nanoc` dependency.
   hand-dispatching each bead.
 - You want "it proposes work, I approve from Slack, it runs."
 
-**Key verbs:** `po director start [DIR]`, `po director stop`,
+**Key verbs:** `po director start [DIR] [--persona NAME]`, `po director stop`,
 `po director status`; formulas `director-pulse`, `director-reflect`.
+
+**Personas:** the standing agent's identity is configurable (`--persona`,
+`persona=` in `.director.toml`, or `[persona].name` in `.ade/settings.toml`).
+Default `director` is builtin; packs ship more via the `po.personas` entry-point
+group. Non-default personas suffix deployment/session names so several can share
+one workspace. See README "Personas".
 
 **Key paths:** config `<workspace>/.director.toml`; goal `<workspace>/goal.md`;
 memory `<workspace>/.director/handoff-<date>.md`; prompts

@@ -77,11 +77,21 @@ def build_board(cfg: DirectorConfig) -> str:
     return "\n\n".join(sections)
 
 
-def build_prompt(cfg: DirectorConfig, role: str, **extra: object) -> str:
-    """Render `<agents>/<role>/prompt.md` with the gathered workspace state.
+def build_prompt(
+    cfg: DirectorConfig,
+    role: str,
+    *,
+    agents_dir: Path | None = None,
+    **extra: object,
+) -> str:
+    """Render `<agents_dir>/<role>/prompt.md` with the gathered workspace state.
 
-    `role` is "director" or "reflector". `extra` overrides any computed var.
+    `agents_dir` defaults to po_director's builtin prompts; the persona-aware
+    flows pass a resolved persona directory so a pack-shipped persona's
+    `prompt.md` (and optional `reflector/prompt.md`) renders instead. `extra`
+    overrides any computed var.
     """
+    base = agents_dir if agents_dir is not None else AGENTS_DIR
     vars_: dict[str, object] = {
         "workspace_dir": cfg.workspace_dir,
         "goal": _read_goal(cfg),
@@ -94,4 +104,31 @@ def build_prompt(cfg: DirectorConfig, role: str, **extra: object) -> str:
         "memory": _latest_handoff(cfg),
     }
     vars_.update(extra)
-    return render_template(AGENTS_DIR, role, **vars_)
+    return render_template(base, role, **vars_)
+
+
+def persona_prompt(cfg: DirectorConfig, **extra: object) -> str:
+    """Render the persona's pulse prompt (`<persona_dir>/prompt.md`).
+
+    Resolves `cfg.persona` via the `po.personas` entry points / builtins. For
+    the default `director` persona this is byte-identical to
+    `build_prompt(cfg, "director")`.
+    """
+    from po_director.persona import resolve_persona_dir
+
+    persona_dir = resolve_persona_dir(cfg.persona)
+    return build_prompt(cfg, persona_dir.name, agents_dir=persona_dir.parent, **extra)
+
+
+def reflect_prompt(cfg: DirectorConfig, **extra: object) -> str:
+    """Render the reflection prompt, preferring a persona-shipped reflector.
+
+    Uses `<persona_dir>/reflector/prompt.md` when the persona ships one;
+    otherwise falls back to po_director's builtin reflector.
+    """
+    from po_director.persona import resolve_persona_dir
+
+    persona_dir = resolve_persona_dir(cfg.persona)
+    if (persona_dir / "reflector" / "prompt.md").is_file():
+        return build_prompt(cfg, "reflector", agents_dir=persona_dir, **extra)
+    return build_prompt(cfg, "reflector", **extra)
