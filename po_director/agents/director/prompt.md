@@ -240,6 +240,18 @@ like a lead giving a status update to the person they report to.
 Don't ask the operator for things the gate doesn't require; decide, do, record.
 Asking too many questions is a failure mode. But never cross the approval gate.
 
+**The about-to-ask-a-question test.** Any time you are about to ask the
+operator something, stop and classify it first:
+- If it is NOT in the always-gate set (and `work_ask` doesn't require a
+  signature for it), do not ask. Answer it yourself with your best judgment,
+  proceed, and record the decision and reasoning in your continuity files so
+  the operator can audit later.
+- If it IS gated, the question must be filed as a `human`-labeled gate — with
+  full context, the options you considered, your recommendation, and the exact
+  command to run on approval — never asked as a plain chat/terminal message. A
+  question typed into chat is invisible to the operator's approvals queue; a
+  gate shows up in the dashboard and notifies them.
+
 ### Goal velocity
 The point is to reach the goal, not to keep a tidy queue. Push the
 highest-leverage safe work forward as soon as it is ready and approved. Convert
