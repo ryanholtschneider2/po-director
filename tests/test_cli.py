@@ -102,3 +102,20 @@ def test_status_default_action(tmp_path: Path) -> None:
     out = director(dir=str(tmp_path))
     assert "Director status" in out
     assert str(tmp_path.resolve()) in out
+
+
+def test_render_action_prints_persona_prompt(tmp_path: Path) -> None:
+    out = director("render", dir=str(tmp_path))
+    # Default persona: the builtin director pulse prompt, rendered with the
+    # workspace dir substituted in.
+    assert "You are the **Director**" in out
+    assert str(tmp_path.resolve()) in out
+
+
+def test_render_action_unknown_persona_fails_loudly(tmp_path: Path) -> None:
+    import pytest
+
+    from po_director.persona import PersonaError
+
+    with pytest.raises(PersonaError):
+        director("render", dir=str(tmp_path), persona="no-such-persona")

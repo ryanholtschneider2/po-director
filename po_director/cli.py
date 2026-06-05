@@ -163,7 +163,7 @@ def _status(cfg: DirectorConfig) -> str:
     )
 
 
-_ACTIONS = ("start", "stop", "status")
+_ACTIONS = ("start", "stop", "status", "render")
 
 
 def director(
@@ -221,4 +221,11 @@ def director(
         return _start(cfg)
     if action == "stop":
         return _stop(load_config(workspace_dir, persona_override=persona))
+    if action == "render":
+        # Print the persona's rendered prompt to stdout — for external session
+        # runners (e.g. orchestra's persistent persona sessions) that want the
+        # exact prompt a pulse would use without going through Prefect.
+        from po_director.render import persona_prompt
+
+        return persona_prompt(load_config(workspace_dir, persona_override=persona))
     return _status(load_config(workspace_dir, persona_override=persona))
