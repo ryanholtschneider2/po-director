@@ -13,6 +13,7 @@ from po_director.config import (
     DEFAULT_WORK_SOURCE,
     DirectorConfig,
     load_config,
+    normalize_classes,
     save_config,
 )
 
@@ -132,3 +133,67 @@ def test_ade_overrides_legacy_director_toml(tmp_path: Path) -> None:
     cfg = load_config(tmp_path)
     assert cfg.north_star == "new"  # .ade wins over .director.toml
     assert cfg.slack_channel == "NEW"
+
+
+# ─── conditional gate thresholds ─────────────────────────────────────────
+
+
+def test_gate_thresholds_default_empty(tmp_path: Path) -> None:
+    """No [gates] table → empty allowlists → every gate fires (no behavior
+    change for projects that don't opt in)."""
+    cfg = load_config(tmp_path)
+    assert cfg.entry_auto_pass == ()
+    assert cfg.exit_auto_pass == ()
+    assert cfg.exit_max_diff_lines == 0
+
+
+def test_gates_ade_comma_string(tmp_path: Path) -> None:
+    _write_ade(
+        tmp_path,
+        "\n".join(
+            [
+                "[gates.entry]",
+                'auto_pass = "lint, docs, chore"',
+                "[gates.exit]",
+                'auto_pass = "lint,docs"',
+                "max_diff_lines = 40",
+            ]
+        )
+        + "\n",
+    )
+    cfg = load_config(tmp_path)
+    assert cfg.entry_auto_pass == ("lint", "docs", "chore")
+    assert cfg.exit_auto_pass == ("lint", "docs")
+    assert cfg.exit_max_diff_lines == 40
+
+
+def test_gates_ade_toml_array(tmp_path: Path) -> None:
+    _write_ade(
+        tmp_path, '[gates.entry]\nauto_pass = ["docs", "test"]\n'
+    )
+    assert load_config(tmp_path).entry_auto_pass == ("docs", "test")
+
+
+def test_normalize_classes_drops_unknown_and_never_auto_pass(tmp_path: Path) -> None:
+    # Unknown tokens and NEVER_AUTO_PASS classes are stripped — a typo or a
+    # hand-edited dangerous class can only ever fail closed, never widen a gate.
+    assert normalize_classes("lint, bogus, schema, migration, docs") == ("lint", "docs")
+    assert normalize_classes("SCHEMA, Force-Push, spend") == ()
+    assert normalize_classes(["fix", "fix", "FIX"]) == ("fix",)  # dedupe + case-fold
+    assert normalize_classes(None) == ()
+    assert normalize_classes(123) == ()
+
+
+def test_gates_roundtrip_and_clamp(tmp_path: Path) -> None:
+    cfg = DirectorConfig(
+        workspace_dir=str(tmp_path),
+        entry_auto_pass="lint,docs,schema",  # schema stripped on construct
+        exit_auto_pass=["docs"],
+        exit_max_diff_lines=-5,  # clamped to 0
+    )
+    assert cfg.entry_auto_pass == ("lint", "docs")
+    assert cfg.exit_max_diff_lines == 0
+    save_config(cfg)
+    loaded = load_config(tmp_path)
+    assert loaded.entry_auto_pass == ("lint", "docs")
+    assert loaded.exit_auto_pass == ("docs",)

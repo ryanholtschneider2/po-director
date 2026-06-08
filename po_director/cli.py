@@ -51,6 +51,9 @@ def _ensure_config(
     pulse_cron: str | None,
     reflect_cron: str | None,
     north_star: str | None,
+    entry_auto_pass: str | None = None,
+    exit_auto_pass: str | None = None,
+    exit_max_diff_lines: int | None = None,
     persona: str | None = None,
 ) -> DirectorConfig:
     """Load-or-create config, prompting for goal/North Star on first run.
@@ -86,6 +89,12 @@ def _ensure_config(
         cfg.reflect_cron = reflect_cron
     if north_star is not None:
         cfg.north_star = north_star
+    if entry_auto_pass is not None:
+        cfg.entry_auto_pass = entry_auto_pass  # normalized on re-construct below
+    if exit_auto_pass is not None:
+        cfg.exit_auto_pass = exit_auto_pass
+    if exit_max_diff_lines is not None:
+        cfg.exit_max_diff_lines = exit_max_diff_lines
 
     if not existing:
         # First run: capture goal + North Star.
@@ -100,7 +109,9 @@ def _ensure_config(
             goal_file.parent.mkdir(parents=True, exist_ok=True)
             goal_file.write_text("# Goal\n\n" + goal + "\n", encoding="utf-8")
 
-    DirectorConfig(**{k: getattr(cfg, k) for k in DirectorConfig.__dataclass_fields__})  # validate
+    # Reconstruct to validate AND re-normalize (CLI-assigned auto-pass values
+    # arrive as raw strings; __post_init__ coerces them to clean class tuples).
+    cfg = DirectorConfig(**{k: getattr(cfg, k) for k in DirectorConfig.__dataclass_fields__})
     save_config(cfg)
     return cfg
 
@@ -154,6 +165,14 @@ def _status(cfg: DirectorConfig) -> str:
             "  work:          " + cfg.work_source + " / " + cfg.work_ask
             + "  (source / ask)",
             "  merge_mode:    " + cfg.merge_mode + " (" + cfg.merge_strategy + ")",
+            "  entry_auto_pass: " + (", ".join(cfg.entry_auto_pass) or "(none)"),
+            "  exit_auto_pass:  "
+            + (", ".join(cfg.exit_auto_pass) or "(none)")
+            + (
+                " (<= " + str(cfg.exit_max_diff_lines) + " diff lines)"
+                if cfg.exit_max_diff_lines
+                else ""
+            ),
             "  ci_cmd:        " + (cfg.ci_cmd or "(unset — agent will detect)"),
             "  slack_channel: " + (cfg.slack_channel or "(none)"),
             "  pulse_cron:    " + cfg.pulse_cron,
@@ -179,6 +198,9 @@ def director(
     pulse_cron: str | None = None,
     reflect_cron: str | None = None,
     north_star: str | None = None,
+    entry_auto_pass: str | None = None,
+    exit_auto_pass: str | None = None,
+    exit_max_diff_lines: int | None = None,
     persona: str | None = None,
 ) -> str:
     """Start/stop/inspect the Director for a workspace directory.
@@ -186,6 +208,12 @@ def director(
     Involvement is two independent axes (see .ade/settings.toml):
       inbound  --work-source ideate|issues  --work-ask gate|auto
       outbound --merge-mode auto|human|approve-all|ai-approve-all  --merge-strategy pr|direct
+
+    Conditional gate thresholds let trivial work skip a human gate (opt-in;
+    empty = every gate fires, the default):
+      --entry-auto-pass "lint,docs,chore"   classes that skip the ENTRY gate
+      --exit-auto-pass  "lint,docs"          classes that may auto-merge
+      --exit-max-diff-lines 40               size cap on EXIT auto-merge (0 = none)
 
     `--persona <name>` selects the standing agent's identity (default
     `director`; packs ship more via the `po.personas` entry-point group). A
@@ -216,6 +244,9 @@ def director(
             pulse_cron=pulse_cron,
             reflect_cron=reflect_cron,
             north_star=north_star,
+            entry_auto_pass=entry_auto_pass,
+            exit_auto_pass=exit_auto_pass,
+            exit_max_diff_lines=exit_max_diff_lines,
             persona=persona,
         )
         return _start(cfg)

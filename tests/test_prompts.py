@@ -24,6 +24,9 @@ _DIRECTOR_VARS = {
     "work_ask": "gate",
     "merge_mode": "auto",
     "merge_strategy": "pr",
+    "entry_auto_pass": "lint, docs",
+    "exit_auto_pass": "lint, docs",
+    "exit_max_diff_lines": 40,
     "memory": "(no prior handoff)",
 }
 _REFLECTOR_VARS = {
@@ -38,6 +41,8 @@ _SHERIFF_VARS = {
     "merge_mode": "auto",
     "merge_strategy": "pr",
     "ci_cmd": "make test",
+    "exit_auto_pass": "lint, docs",
+    "exit_max_diff_lines": 40,
 }
 
 _LEFTOVER = re.compile(r"\{\{.*?\}\}")
@@ -56,6 +61,9 @@ def test_pr_sheriff_prompt_fully_renders() -> None:
     for anchor in ("ws-42", "fix-merge", "needs-human", "needs-rewrite"):
         assert anchor in out
     assert "never write application code" in out.lower()
+    # Threshold auto-pass surfaces the EXIT allowlist + size cap.
+    assert "exit_auto_pass = lint, docs" in out
+    assert "auto-merge" in out.lower()
 
 
 def test_director_prompt_fully_renders() -> None:
@@ -66,6 +74,8 @@ def test_director_prompt_fully_renders() -> None:
     assert "work_source = ideate" in out
     assert "bd human" in out
     assert "/tmp/ws" in out
+    # Threshold auto-pass surfaces the ENTRY allowlist.
+    assert "entry_auto_pass = lint, docs" in out
 
 
 def test_reflector_prompt_fully_renders() -> None:
