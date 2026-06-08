@@ -99,6 +99,16 @@ PR Sheriff handles that; not your concern here).
   things in the never-without-asking list below — force-push, prod deploy,
   schema/data migration, spend — gate those regardless.)
 
+**Threshold auto-pass — `entry_auto_pass = {{entry_auto_pass}}`.** Even under
+`work_ask = gate`, you may **skip the gate and dispatch directly** when the work
+you're about to propose is purely one of these change classes. Classify the idea
+into one class — `lint`, `format`, `docs`, `chore`, `test`, `refactor`, `fix`,
+`feature` — and if that class is on the auto-pass list above, dispatch it
+straight away (no `bd human` gate). If the list reads "(none …)", nothing
+auto-passes and every dispatch gates as usual. Classify honestly: work that
+*touches* schema, migrations, public API, or anything in the always-gate list
+below is never trivial regardless of how else you'd label it — gate it.
+
 **How a gate works here** (beads `human`-label model):
 - To **propose** work, file a gate — create a `human`-labeled bead whose title is
   the question and whose description contains the exact command to run on

@@ -40,6 +40,47 @@ DEFAULT_APPROVAL_MODE = "always"
 APPROVAL_MODES = ("always", "batches", "consequential")
 _LEGACY_APPROVAL_TO_ASK = {"always": "gate", "batches": "gate", "consequential": "gate"}
 
+# Conditional gate thresholds (see README "Conditional gates"). Each gate —
+# ENTRY (idea -> dispatch) and EXIT (merge) — may auto-pass below a per-project
+# threshold. The unifying primitive is the *change class*: ENTRY fires before
+# any code exists, so a diff-size threshold is meaningless there; a class is the
+# only signal available at both gate times. `*_auto_pass` is an opt-in allowlist
+# of classes that skip the human gate; the default empty allowlist means every
+# gate fires (identical to pre-threshold behavior — this is the whole safety
+# story for projects that don't opt in).
+CHANGE_CLASSES = ("lint", "format", "docs", "chore", "test", "refactor", "fix", "feature")
+# Classes that are NEVER eligible for auto-pass, stripped from any allowlist.
+# Mirrors the prompt's standing "always gate regardless" list.
+NEVER_AUTO_PASS = ("schema", "migration", "public-api", "force-push", "deploy", "spend")
+DEFAULT_ENTRY_AUTO_PASS: tuple[str, ...] = ()
+DEFAULT_EXIT_AUTO_PASS: tuple[str, ...] = ()
+DEFAULT_EXIT_MAX_DIFF_LINES = 0  # 0 = no size cap; class allowlist + CI green only
+
+
+def normalize_classes(value: object) -> tuple[str, ...]:
+    """Coerce an auto-pass setting into a clean tuple of known change classes.
+
+    Accepts a comma-separated string (``"lint, docs"``) or a list/tuple. Lower-
+    cases and strips each entry, keeps only members of `CHANGE_CLASSES`, drops
+    anything in `NEVER_AUTO_PASS`, and de-dupes preserving first-seen order.
+    Unknown tokens are silently dropped so a typo can never *widen* a gate — it
+    only ever fails closed (keeps gating). Returns ``()`` for None/empty.
+    """
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        raw = value.split(",")
+    elif isinstance(value, (list, tuple)):
+        raw = [str(v) for v in value]
+    else:
+        return ()
+    out: list[str] = []
+    for token in raw:
+        cls = token.strip().lower()
+        if cls and cls in CHANGE_CLASSES and cls not in NEVER_AUTO_PASS and cls not in out:
+            out.append(cls)
+    return tuple(out)
+
 
 @dataclass(slots=True)
 class DirectorConfig:
@@ -57,6 +98,12 @@ class DirectorConfig:
     merge_mode: str = DEFAULT_MERGE_MODE
     merge_strategy: str = DEFAULT_MERGE_STRATEGY
     ci_cmd: str | None = None  # repo CI command; agents may detect + write this
+    # Conditional gate thresholds — opt-in allowlists of change classes that may
+    # skip the human gate. Empty (default) = every gate fires (no behavior
+    # change). See `gates.py` for the decision semantics.
+    entry_auto_pass: tuple[str, ...] = DEFAULT_ENTRY_AUTO_PASS
+    exit_auto_pass: tuple[str, ...] = DEFAULT_EXIT_AUTO_PASS
+    exit_max_diff_lines: int = DEFAULT_EXIT_MAX_DIFF_LINES  # 0 = no size cap
     # The standing agent's identity. 'director' is the builtin; packs ship more
     # via the `po.personas` entry-point group (see persona.py).
     persona: str = DEFAULT_PERSONA
@@ -66,6 +113,11 @@ class DirectorConfig:
         self._check("work_ask", self.work_ask, WORK_ASKS)
         self._check("merge_mode", self.merge_mode, MERGE_MODES)
         self._check("merge_strategy", self.merge_strategy, MERGE_STRATEGIES)
+        # Normalize the auto-pass allowlists (string/list -> clean class tuple)
+        # and clamp the size cap so a hand-edited config can't poison a gate.
+        self.entry_auto_pass = normalize_classes(self.entry_auto_pass)
+        self.exit_auto_pass = normalize_classes(self.exit_auto_pass)
+        self.exit_max_diff_lines = max(0, int(self.exit_max_diff_lines or 0))
 
     @staticmethod
     def _check(name: str, val: str, allowed: tuple[str, ...]) -> None:
@@ -97,6 +149,8 @@ def _flatten_ade(data: dict[str, object]) -> dict[str, object]:
     [persona].name, [goals].{north_star, goal_path},
     [involvement].{work_source,work_ask,merge_mode},
     [merge].{strategy->merge_strategy, ci_cmd},
+    [gates.entry].auto_pass->entry_auto_pass,
+    [gates.exit].{auto_pass->exit_auto_pass, max_diff_lines->exit_max_diff_lines},
     [notify].slack_channel, [schedule].{pulse_cron, reflect_cron}.
 
     Together these let a corp dir express the whole minimal contract — persona,
@@ -124,6 +178,17 @@ def _flatten_ade(data: dict[str, object]) -> dict[str, object]:
             out["merge_strategy"] = merge["strategy"]
         if "ci_cmd" in merge:
             out["ci_cmd"] = merge["ci_cmd"]
+    gates = data.get("gates")
+    if isinstance(gates, dict):
+        entry = gates.get("entry")
+        if isinstance(entry, dict) and "auto_pass" in entry:
+            out["entry_auto_pass"] = entry["auto_pass"]
+        exit_ = gates.get("exit")
+        if isinstance(exit_, dict):
+            if "auto_pass" in exit_:
+                out["exit_auto_pass"] = exit_["auto_pass"]
+            if "max_diff_lines" in exit_:
+                out["exit_max_diff_lines"] = exit_["max_diff_lines"]
     notify = data.get("notify")
     if isinstance(notify, dict) and "slack_channel" in notify:
         out["slack_channel"] = notify["slack_channel"]
@@ -197,6 +262,8 @@ def _toml_value(val: object) -> str:
         return "true" if val else "false"
     if isinstance(val, (int, float)):
         return str(val)
+    if isinstance(val, (list, tuple)):
+        return "[" + ", ".join(_toml_value(v) for v in val) + "]"
     return '"' + str(val).replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 

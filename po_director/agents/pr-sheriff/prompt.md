@@ -74,6 +74,25 @@ Use your judgement (you are the decision-maker — ZFC). Pick ONE:
 - **`{{merge_mode}}` = `human`** — do **not** merge. Run CI + fix-merge to get it green, then
   always return **needs-human** (the human makes every final merge call).
 
+### Threshold auto-pass (EXIT gate)
+
+`exit_auto_pass = {{exit_auto_pass}}`  ·  size cap `{{exit_max_diff_lines}}` (0 = no cap)
+
+Below this threshold a trivial change may **auto-merge even under
+`merge_mode = human`** — the human-merge default is for *real* changes, not a
+docs typo. Classify the PR's diff into one change class (`lint`, `format`,
+`docs`, `chore`, `test`, `refactor`, `fix`, `feature`). Auto-merge (verdict
+**merge**) iff ALL hold:
+1. that class is on `exit_auto_pass`,
+2. CI is green, and
+3. the size cap is 0 OR the diff is within `{{exit_max_diff_lines}}` changed lines.
+
+If any condition fails, fall back to the mode constraint above (so `human` still
+returns needs-human). If `exit_auto_pass` reads "(none …)", nothing auto-passes
+and the mode constraints govern unchanged. A PR that touches schema, migrations,
+public API, or anything irreversible never qualifies regardless of its other
+contents.
+
 ## 4. Land a merge (merge / approved fix-merge)
 
 **Sequential rebase** — after every merge `target` moves; rebase the branch on the fresh

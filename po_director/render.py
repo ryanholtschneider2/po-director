@@ -100,6 +100,10 @@ def build_prompt(
         "work_ask": cfg.work_ask,
         "merge_mode": cfg.merge_mode,
         "merge_strategy": cfg.merge_strategy,
+        "entry_auto_pass": ", ".join(cfg.entry_auto_pass)
+        or "(none — every new dispatch gates)",
+        "exit_auto_pass": ", ".join(cfg.exit_auto_pass) or "(none — every merge gates)",
+        "exit_max_diff_lines": cfg.exit_max_diff_lines,
         "board": build_board(cfg),
         "memory": _latest_handoff(cfg),
     }

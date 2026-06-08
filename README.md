@@ -84,9 +84,47 @@ corp dir overrides only what differs in its `.ade/settings.toml`, and a CLI
 flag wins for a one-off run. The `.ade/settings.toml` tables map onto config
 keys as: `[persona].name`, `[goals].{north_star, goal_path}`,
 `[involvement].{work_source, work_ask, merge_mode}`,
-`[merge].{strategy, ci_cmd}`, `[notify].slack_channel`, and
+`[merge].{strategy, ci_cmd}`,
+`[gates.entry].auto_pass`, `[gates.exit].{auto_pass, max_diff_lines}`,
+`[notify].slack_channel`, and
 `[schedule].{pulse_cron, reflect_cron}`. Unknown tables/keys are ignored, so a
 newer config never crashes an older pack.
+
+### Conditional gate thresholds
+
+The Director runs two human-approval gates: **ENTRY** (a Director-invented idea
+becomes a dispatch / new issue) and **EXIT** (a finished PR reaches `main` — the
+PR Sheriff). Each can **auto-pass below a per-project threshold** so trivial work
+skips the human while real changes still gate.
+
+The threshold primitive is the **change class**, not diff size: ENTRY fires
+*before any code exists*, so the only signal common to both gates is "what kind
+of change is this." A change is classified into one of `lint`, `format`, `docs`,
+`chore`, `test`, `refactor`, `fix`, `feature`. Each gate gets an opt-in
+*allowlist* of classes that may skip it; EXIT additionally takes an optional diff
+size cap and always requires CI green.
+
+```toml
+[gates.entry]
+auto_pass = "lint, format, docs, chore"   # these dispatch directly, no bd-human gate
+
+[gates.exit]
+auto_pass = "lint, format, docs"          # these may auto-merge…
+max_diff_lines = 40                         # …when the diff is ≤ 40 lines (0 = no cap)
+```
+
+`auto_pass` accepts a comma string or a TOML array. A hard never-auto-pass set
+(`schema`, `migration`, `public-api`, `force-push`, `deploy`, `spend`) is
+stripped from any allowlist, and unknown classes are dropped — a typo or a
+hand-edited dangerous class can only ever *keep gating*, never widen a gate.
+
+**Default: both allowlists empty → every gate fires → identical to having no
+thresholds at all.** Opting in is the whole behavior change; a project that wants
+to stay fully human-gated (e.g. `polymer-usgs-transition` on merge) simply omits
+`[gates]`. The decision semantics live in `po_director/gates.py`
+(`entry_auto_pass` / `exit_auto_pass`); the Director and PR-Sheriff prompts apply
+them in prose, and `po director status` shows the active allowlists. Override for
+one run with `--entry-auto-pass`, `--exit-auto-pass`, `--exit-max-diff-lines`.
 
 ### Why no `extends =` (shared org-level base config)
 
