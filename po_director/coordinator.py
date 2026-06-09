@@ -25,12 +25,13 @@ from prefect_orchestration.backend_select import select_default_backend
 
 from po_director.config import DEFAULT_PERSONA, DirectorConfig, load_config
 from po_director.notify import post_slack
-from po_director.render import persona_prompt, reflect_prompt
+from po_director.render import dream_prompt, persona_prompt, reflect_prompt
 
 logger = logging.getLogger(__name__)
 
 _PROPOSAL_TITLE = "Director proposal — needs your approval"
 _REFLECTION_TITLE = "Director — daily reflection"
+_DREAM_TITLE = "Director — nightly consolidation"
 
 
 def persona_role(cfg: DirectorConfig, base: str) -> str:
@@ -163,6 +164,43 @@ def director_reflect(
 
     posted = 0
     if result.strip() and post_slack(cfg.slack_channel, _REFLECTION_TITLE, result):
+        posted = 1
+    return {
+        "dry_run": False,
+        "posted": posted,
+        "chars": len(result),
+        "session_id": session.session_id,
+    }
+
+
+@flow(name="director-dream")
+def director_dream(
+    workspace_dir: str,
+    *,
+    dry_run: bool = False,
+    backend: object | None = None,
+) -> dict[str, object]:
+    """Nightly memory consolidation ('dreaming').
+
+    One agent turn that reads the day's session transcripts, distils durable
+    facts/decisions/lessons into `.director/STATE.md` + a dated
+    `.director/memory/<date>.md`, and updates docs where the day's work changed
+    reality. The flow is transport (schedule + spawn + post the digest); the
+    agent owns the judgment of what's worth remembering. Posts a short digest to
+    Slack. On `dry_run` short-circuits before any agent turn.
+    """
+    log = _log()
+    cfg = load_config(workspace_dir)
+
+    if dry_run:
+        log.info("director-dream dry-run: skipping agent turn for %s", cfg.workspace_dir)
+        return {"dry_run": True, "posted": 0}
+
+    session = _make_session(cfg, persona_role(cfg, "dreamer"), backend)
+    result = session.prompt(dream_prompt(cfg))
+
+    posted = 0
+    if result.strip() and post_slack(cfg.slack_channel, _DREAM_TITLE, result):
         posted = 1
     return {
         "dry_run": False,

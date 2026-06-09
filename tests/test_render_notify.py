@@ -13,6 +13,37 @@ def _cfg(tmp_path: Path, **kw: object) -> DirectorConfig:
     return DirectorConfig(workspace_dir=str(tmp_path), **kw)  # type: ignore[arg-type]
 
 
+def test_project_transcripts_dir_slugs_path() -> None:
+    d = render.project_transcripts_dir("/home/u/Desktop/Code/personal/HoltschneiderLLC")
+    assert d.name == "-home-u-Desktop-Code-personal-HoltschneiderLLC"
+    assert d.parent.name == "projects"
+
+
+def test_recent_transcripts_lists_fresh_only(tmp_path: Path, monkeypatch) -> None:
+    import os
+    import time
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "fresh.jsonl").write_text("{}\n", encoding="utf-8")
+    stale = proj / "stale.jsonl"
+    stale.write_text("{}\n", encoding="utf-8")
+    old = time.time() - 100 * 3600  # well outside the window
+    os.utime(stale, (old, old))
+    monkeypatch.setattr(render, "project_transcripts_dir", lambda ws: proj)
+    block = render.recent_transcripts(_cfg(tmp_path), within_hours=24)
+    assert "fresh.jsonl" in block
+    assert "stale.jsonl" not in block
+
+
+def test_dream_prompt_injects_transcripts(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(render, "_run", lambda cmd, cwd: "(none)")
+    monkeypatch.setattr(render, "recent_transcripts", lambda cfg, **k: "TRANSCRIPT-BLOCK")
+    out = render.dream_prompt(_cfg(tmp_path))
+    assert "TRANSCRIPT-BLOCK" in out
+    assert "STATE.md" in out
+
+
 def test_build_board_uses_command_output(tmp_path: Path, monkeypatch) -> None:
     seen: list[list[str]] = []
 

@@ -126,11 +126,12 @@ def _start(cfg: DirectorConfig) -> str:
 
 
 def _stop(cfg: DirectorConfig) -> str:
-    pulse_name, reflect_name = deployment_names(cfg)
+    pulse_name, reflect_name, dream_name = deployment_names(cfg)
     results = []
     for flow_name, dep_name in (
         ("director-pulse", pulse_name),
         ("director-reflect", reflect_name),
+        ("director-dream", dream_name),
     ):
         target = flow_name + "/" + dep_name
         proc = subprocess.run(
@@ -144,7 +145,7 @@ def _stop(cfg: DirectorConfig) -> str:
 
 
 def _status(cfg: DirectorConfig) -> str:
-    pulse_name, reflect_name = deployment_names(cfg)
+    pulse_name, reflect_name, dream_name = deployment_names(cfg)
     return "\n".join(
         [
             "Director status for " + cfg.workspace_dir,
@@ -158,7 +159,8 @@ def _status(cfg: DirectorConfig) -> str:
             "  slack_channel: " + (cfg.slack_channel or "(none)"),
             "  pulse_cron:    " + cfg.pulse_cron,
             "  reflect_cron:  " + cfg.reflect_cron,
-            "  deployments:   " + pulse_name + ", " + reflect_name,
+            "  dream_cron:    " + cfg.dream_cron,
+            "  deployments:   " + pulse_name + ", " + reflect_name + ", " + dream_name,
         ]
     )
 

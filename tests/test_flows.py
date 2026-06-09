@@ -114,6 +114,28 @@ def test_reflect_posts_when_output(tmp_path: Path, monkeypatch) -> None:
     assert len(posts) == 1
 
 
+def test_dream_dry_run_short_circuits(tmp_path: Path, monkeypatch) -> None:
+    called = {"prompt": False}
+    monkeypatch.setattr(
+        coord, "dream_prompt", lambda *a, **k: called.__setitem__("prompt", True) or "x"
+    )
+    out = coord.director_dream.fn(_ws(tmp_path), dry_run=True)
+    assert out["dry_run"] is True and out["posted"] == 0
+    assert called["prompt"] is False
+
+
+def test_dream_posts_digest(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(coord, "dream_prompt", lambda *a, **k: "PROMPT")
+    posts: list[tuple] = []
+    monkeypatch.setattr(coord, "post_slack", lambda *a, **k: posts.append(a) or True)
+    out = coord.director_dream.fn(
+        _ws(tmp_path, slack_channel="C123"), backend=FakeBackend("consolidated 2 sessions")
+    )
+    assert out["posted"] == 1
+    assert len(posts) == 1
+    assert posts[0][1] == coord._DREAM_TITLE
+
+
 def test_gate_map_handles_null(monkeypatch) -> None:
     # bd v1.0.4 emits `null` (not []) when there are no human gates.
     class P:

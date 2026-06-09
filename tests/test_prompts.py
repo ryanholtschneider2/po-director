@@ -32,6 +32,13 @@ _REFLECTOR_VARS = {
     "north_star": "open issues burned down",
     "board": "bd ready: (none)",
 }
+_DREAMER_VARS = {
+    "workspace_dir": "/tmp/ws",
+    "goal": "Ship the roadmap.",
+    "north_star": "open issues burned down",
+    "board": "bd ready: (none)",
+    "transcripts": "- `/home/u/.claude/projects/-tmp-ws/abc.jsonl` (12 KB, 2026-06-09 03:00)",
+}
 _SHERIFF_VARS = {
     "feature_id": "ws-42",
     "workspace_dir": "/tmp/ws",
@@ -46,7 +53,17 @@ _LEFTOVER = re.compile(r"\{\{.*?\}\}")
 def test_prompt_files_exist() -> None:
     assert (AGENTS_DIR / "director" / "prompt.md").is_file()
     assert (AGENTS_DIR / "reflector" / "prompt.md").is_file()
+    assert (AGENTS_DIR / "dreamer" / "prompt.md").is_file()
     assert (AGENTS_DIR / "pr-sheriff" / "prompt.md").is_file()
+
+
+def test_dreamer_prompt_fully_renders() -> None:
+    out = render_template(AGENTS_DIR, "dreamer", **_DREAMER_VARS)
+    assert not _LEFTOVER.search(out), f"unrendered placeholders: {_LEFTOVER.findall(out)}"
+    # Behavioral anchors: the two memory tiers + the transcript material.
+    assert "STATE.md" in out
+    assert ".director/memory/" in out
+    assert "abc.jsonl" in out
 
 
 def test_pr_sheriff_prompt_fully_renders() -> None:

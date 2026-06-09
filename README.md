@@ -19,7 +19,7 @@ po packs install --editable .
 
 # Start the Director watching the current directory.
 # First run prompts for the goal + North Star, writes .director.toml + goal.md,
-# and registers two cron deployments (pulse every 10m, reflect daily).
+# and registers three cron deployments (pulse every 10m, reflect daily, dream nightly).
 po director start
 
 # Inspect / stop
@@ -85,7 +85,7 @@ flag wins for a one-off run. The `.ade/settings.toml` tables map onto config
 keys as: `[persona].name`, `[goals].{north_star, goal_path}`,
 `[involvement].{work_source, work_ask, merge_mode}`,
 `[merge].{strategy, ci_cmd}`, `[notify].slack_channel`, and
-`[schedule].{pulse_cron, reflect_cron}`. Unknown tables/keys are ignored, so a
+`[schedule].{pulse_cron, reflect_cron, dream_cron}`. Unknown tables/keys are ignored, so a
 newer config never crashes an older pack.
 
 ### Why no `extends =` (shared org-level base config)
@@ -111,6 +111,15 @@ the one layering seam.
   gate "yes", the next pulse dispatches it via `po run`.
 - **`director-reflect`** (daily) — a one-page written reflection on the goal,
   posted to Slack.
+- **`director-dream`** (daily, off-peak) — nightly memory consolidation. Reads
+  the day's session transcripts (`~/.claude/projects/<workspace-slug>/*.jsonl`),
+  distils durable facts / decisions / lessons into the curated company brain at
+  `.director/STATE.md` plus a dated `.director/memory/<date>.md`, and updates docs
+  where the day's work made them stale. This is what lets a fresh pulse (every
+  session starts cold) carry forward settled decisions and standing guidance
+  instead of forgetting them. Posts a short consolidation digest to Slack. The
+  flow is transport (schedule + spawn + post); the agent owns the judgment of
+  what's worth remembering.
 
 ## Configuration reference
 
@@ -128,6 +137,7 @@ layer *under* `.ade/settings.toml`.
 | `slack_channel` | `None` | Slack channel id for posts; no posting when unset |
 | `pulse_cron` | `*/10 * * * *` | pulse schedule |
 | `reflect_cron` | `0 13 * * *` | reflection schedule (daily) |
+| `dream_cron` | `0 4 * * *` | nightly consolidation schedule (daily, off-peak) |
 | `approval_mode` | `always` | `always` \| `batches` \| `consequential` |
 
 `approval_mode`:
@@ -183,10 +193,13 @@ def get_persona_dir() -> Path:
 The directory must contain `prompt.md` (the pulse persona prompt) and may contain:
 
 - `config.toml` — per-persona defaults for any of `work_source`, `work_ask`,
-  `pulse_cron`, `reflect_cron`, `merge_mode`, `merge_strategy` (overridden by
+  `pulse_cron`, `reflect_cron`, `dream_cron`, `merge_mode`, `merge_strategy` (overridden by
   workspace settings and CLI flags).
 - `reflector/prompt.md` — a persona-specific reflection prompt; when absent the
   builtin reflector is used.
+- `dreamer/prompt.md` — a persona-specific nightly-consolidation prompt; when
+  absent the builtin dreamer is used. It additionally receives `{{transcripts}}`
+  (the day's session files to consolidate).
 
 Prompts use po's `{{var}}` substitution. The pulse prompt may reference
 `{{workspace_dir}}`, `{{goal}}`, `{{north_star}}`, `{{work_source}}`,
