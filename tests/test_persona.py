@@ -208,21 +208,22 @@ def test_default_persona_unchanged_when_nothing_set(tmp_path: Path) -> None:
 
 def test_deployment_names_byte_identical_for_default(tmp_path: Path) -> None:
     cfg = DirectorConfig(workspace_dir=str(tmp_path))  # persona defaults to director
-    pulse, reflect = deployment_names(cfg)
+    pulse, reflect, dream = deployment_names(cfg)
     # No persona component — exactly the legacy shape.
     slug = pulse[len("director-pulse-"):]
     assert pulse == "director-pulse-" + slug
     assert reflect == "director-reflect-" + slug
+    assert dream == "director-dream-" + slug
     assert "ceo" not in pulse
 
 
 def test_deployment_names_persona_suffixed_and_distinct(tmp_path: Path) -> None:
     default = DirectorConfig(workspace_dir=str(tmp_path))
     ceo = DirectorConfig(workspace_dir=str(tmp_path), persona="ceo")
-    d_pulse, _ = deployment_names(default)
-    c_pulse, c_reflect = deployment_names(ceo)
+    d_pulse, _, _ = deployment_names(default)
+    c_pulse, c_reflect, c_dream = deployment_names(ceo)
     assert c_pulse != d_pulse  # personas don't collide on one workspace
-    assert "ceo" in c_pulse and "ceo" in c_reflect
+    assert "ceo" in c_pulse and "ceo" in c_reflect and "ceo" in c_dream
     assert c_pulse.startswith("director-pulse-")
 
 

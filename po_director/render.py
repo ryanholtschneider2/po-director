@@ -8,7 +8,9 @@ note, and feed it all as `{{var}}` values into po's `render_template`.
 from __future__ import annotations
 
 import logging
+import re
 import subprocess
+import time
 from pathlib import Path
 
 from prefect_orchestration.templates import render_template
@@ -18,6 +20,18 @@ from po_director.config import DirectorConfig
 logger = logging.getLogger(__name__)
 
 AGENTS_DIR = Path(__file__).parent / "agents"
+
+# Where the Claude CLI stores per-session transcripts. The cwd is slugged by
+# replacing every non-alphanumeric run with a single dash (so
+# `/home/u/Desktop/Code` -> `-home-u-Desktop-Code`). Used by the dreamer to find
+# the day's sessions to consolidate.
+_CLAUDE_PROJECTS_ROOT = Path.home() / ".claude" / "projects"
+
+
+def project_transcripts_dir(workspace_dir: str) -> Path:
+    """The `~/.claude/projects/<slug>` dir holding this workspace's transcripts."""
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", str(workspace_dir))
+    return _CLAUDE_PROJECTS_ROOT / slug
 
 # Board snapshot commands, run rooted at the workspace dir. Kept small and
 # read-only; the agent can run more itself.
@@ -66,6 +80,43 @@ def _latest_handoff(cfg: DirectorConfig) -> str:
     except OSError:
         return "(no prior handoff)"
     return "Latest handoff (`" + latest.name + "`):\n\n" + body
+
+
+def recent_transcripts(cfg: DirectorConfig, *, within_hours: float = 24.0) -> str:
+    """List the workspace's session transcripts touched in the last `within_hours`.
+
+    Returns a prompt block of `path (size, modified)` lines for the dreamer to
+    read and consolidate, plus the projects dir and the slug convention so the
+    agent can locate sessions itself if the computed dir is empty (e.g. a
+    worktree subdir got its own slug). Transport only — the agent does the
+    reading and the judgment of what's worth remembering.
+    """
+    proj_dir = project_transcripts_dir(cfg.workspace_dir)
+    cutoff = time.time() - within_hours * 3600.0
+    lines: list[str] = [
+        "Projects dir for this workspace: `" + str(proj_dir) + "`",
+        "(Claude slugs the workspace path by replacing non-alphanumerics with `-`."
+        " If the dir below is empty or missing, glob"
+        " `~/.claude/projects/*<workspace-name>*/**/*.jsonl` yourself.)",
+        "",
+    ]
+    if not proj_dir.is_dir():
+        lines.append("(no transcripts dir found yet — locate sessions yourself)")
+        return "\n".join(lines)
+    recent = sorted(
+        (p for p in proj_dir.glob("**/*.jsonl") if p.is_file() and p.stat().st_mtime >= cutoff),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    if not recent:
+        lines.append("(no sessions in the last " + str(int(within_hours)) + "h)")
+        return "\n".join(lines)
+    lines.append("Sessions touched in the last " + str(int(within_hours)) + "h (newest first):")
+    for p in recent:
+        st = p.stat()
+        mtime = time.strftime("%Y-%m-%d %H:%M", time.localtime(st.st_mtime))
+        lines.append("- `" + str(p) + "` (" + str(st.st_size // 1024) + " KB, " + mtime + ")")
+    return "\n".join(lines)
 
 
 def build_board(cfg: DirectorConfig) -> str:
@@ -132,3 +183,19 @@ def reflect_prompt(cfg: DirectorConfig, **extra: object) -> str:
     if (persona_dir / "reflector" / "prompt.md").is_file():
         return build_prompt(cfg, "reflector", agents_dir=persona_dir, **extra)
     return build_prompt(cfg, "reflector", **extra)
+
+
+def dream_prompt(cfg: DirectorConfig, **extra: object) -> str:
+    """Render the daily consolidation ('dream') prompt.
+
+    Prefers a persona-shipped `<persona_dir>/dreamer/prompt.md`, else falls back
+    to po_director's builtin dreamer. Injects the recent-transcripts block so the
+    agent knows which sessions to read and distil into memory.
+    """
+    from po_director.persona import resolve_persona_dir
+
+    extra.setdefault("transcripts", recent_transcripts(cfg))
+    persona_dir = resolve_persona_dir(cfg.persona)
+    if (persona_dir / "dreamer" / "prompt.md").is_file():
+        return build_prompt(cfg, "dreamer", agents_dir=persona_dir, **extra)
+    return build_prompt(cfg, "dreamer", **extra)
