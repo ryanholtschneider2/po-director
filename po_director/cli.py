@@ -131,7 +131,7 @@ def _start(cfg: DirectorConfig) -> str:
 
 
 def _stop(cfg: DirectorConfig) -> str:
-    pulse_name, reflect_name, dream_name = deployment_names(cfg)
+    pulse_name, reflect_name, dream_name, improve_name = deployment_names(cfg)
     results = []
     # The Sheriff deployment is only applied for auto merge modes, but always
     # attempt its delete — `prefect deployment delete` no-ops ("not found")
@@ -140,6 +140,7 @@ def _stop(cfg: DirectorConfig) -> str:
         ("director-pulse", pulse_name),
         ("director-reflect", reflect_name),
         ("director-dream", dream_name),
+        ("director-improve", improve_name),
         ("pr-sheriff", sheriff_deployment_name(cfg)),
     ):
         target = flow_name + "/" + dep_name
@@ -154,8 +155,8 @@ def _stop(cfg: DirectorConfig) -> str:
 
 
 def _status(cfg: DirectorConfig) -> str:
-    pulse_name, reflect_name, dream_name = deployment_names(cfg)
-    deploy_line = pulse_name + ", " + reflect_name + ", " + dream_name
+    pulse_name, reflect_name, dream_name, improve_name = deployment_names(cfg)
+    deploy_line = pulse_name + ", " + reflect_name + ", " + dream_name + ", " + improve_name
     if cfg.merge_mode in AUTO_MERGE_MODES:
         deploy_line += ", " + sheriff_deployment_name(cfg) + " (PR-triggered)"
     return "\n".join(
@@ -172,6 +173,7 @@ def _status(cfg: DirectorConfig) -> str:
             "  pulse_cron:    " + cfg.pulse_cron,
             "  reflect_cron:  " + cfg.reflect_cron,
             "  dream_cron:    " + cfg.dream_cron,
+            "  improve_cron:  " + cfg.improve_cron,
             "  deployments:   " + deploy_line,
         ]
     )

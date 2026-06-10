@@ -136,6 +136,35 @@ def test_dream_posts_digest(tmp_path: Path, monkeypatch) -> None:
     assert posts[0][1] == coord._DREAM_TITLE
 
 
+def test_improve_dry_run_short_circuits(tmp_path: Path, monkeypatch) -> None:
+    # Must NOT run the extractor or build the prompt on a dry run.
+    touched = {"dump": False, "prompt": False}
+    monkeypatch.setattr(
+        coord, "dump_operator_turns",
+        lambda *a, **k: touched.__setitem__("dump", True) or {},
+    )
+    monkeypatch.setattr(
+        coord, "improve_prompt",
+        lambda *a, **k: touched.__setitem__("prompt", True) or "x",
+    )
+    out = coord.director_improve.fn(_ws(tmp_path), dry_run=True)
+    assert out["dry_run"] is True and out["posted"] == 0
+    assert touched == {"dump": False, "prompt": False}
+
+
+def test_improve_mines_then_posts(tmp_path: Path, monkeypatch) -> None:
+    summary = {"sessions": 3, "total_turns": 90, "by_bucket": {}, "out_dir": "x", "top": []}
+    monkeypatch.setattr(coord, "dump_operator_turns", lambda *a, **k: summary)
+    monkeypatch.setattr(coord, "improve_prompt", lambda *a, **k: "PROMPT")
+    posts: list[tuple] = []
+    monkeypatch.setattr(coord, "post_slack", lambda *a, **k: posts.append(a) or True)
+    out = coord.director_improve.fn(
+        _ws(tmp_path, slack_channel="C123"), backend=FakeBackend("filed 4, dispatched 1")
+    )
+    assert out["posted"] == 1 and out["sessions"] == 3
+    assert posts and posts[0][1] == coord._IMPROVE_TITLE
+
+
 def test_gate_map_handles_null(monkeypatch) -> None:
     # bd v1.0.4 emits `null` (not []) when there are no human gates.
     class P:

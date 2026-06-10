@@ -18,7 +18,12 @@ from prefect.client.schemas.schedules import CronSchedule
 from prefect.deployments.runner import EntrypointType
 
 from po_director.config import DEFAULT_PERSONA, DirectorConfig
-from po_director.coordinator import director_dream, director_pulse, director_reflect
+from po_director.coordinator import (
+    director_dream,
+    director_improve,
+    director_pulse,
+    director_reflect,
+)
 from po_director.sheriff import pr_sheriff
 
 _MODULE_PATH = {"entrypoint_type": EntrypointType.MODULE_PATH}
@@ -36,6 +41,7 @@ def register() -> list:
         director_pulse.to_deployment(name="director-pulse-manual", **_MODULE_PATH),
         director_reflect.to_deployment(name="director-reflect-manual", **_MODULE_PATH),
         director_dream.to_deployment(name="director-dream-manual", **_MODULE_PATH),
+        director_improve.to_deployment(name="director-improve-manual", **_MODULE_PATH),
         pr_sheriff.to_deployment(name="pr-sheriff-manual", **_MODULE_PATH),
     ]
 
@@ -80,8 +86,8 @@ def build_sheriff_deployment(cfg: DirectorConfig) -> Any:
     )
 
 
-def deployment_names(cfg: DirectorConfig) -> tuple[str, str, str]:
-    """Scheduled pulse + reflect + dream deployment names for this workspace.
+def deployment_names(cfg: DirectorConfig) -> tuple[str, str, str, str]:
+    """Scheduled pulse + reflect + dream + improve deployment names for this workspace.
 
     The persona is folded into the slug when it isn't the default `director`,
     so several personas can run against one workspace without colliding. Names
@@ -90,12 +96,17 @@ def deployment_names(cfg: DirectorConfig) -> tuple[str, str, str]:
     slug = workspace_slug(cfg.workspace_dir)
     if cfg.persona != DEFAULT_PERSONA:
         slug = _persona_slug(cfg.persona) + "-" + slug
-    return "director-pulse-" + slug, "director-reflect-" + slug, "director-dream-" + slug
+    return (
+        "director-pulse-" + slug,
+        "director-reflect-" + slug,
+        "director-dream-" + slug,
+        "director-improve-" + slug,
+    )
 
 
 def build_workspace_deployments(cfg: DirectorConfig) -> list[Any]:
-    """Scheduled pulse + reflect + dream deployments stamped with this workspace."""
-    pulse_name, reflect_name, dream_name = deployment_names(cfg)
+    """Scheduled pulse + reflect + dream + improve deployments stamped with this workspace."""
+    pulse_name, reflect_name, dream_name, improve_name = deployment_names(cfg)
     params = {"workspace_dir": cfg.workspace_dir}
     deployments: list[Any] = [
         director_pulse.to_deployment(
@@ -122,6 +133,15 @@ def build_workspace_deployments(cfg: DirectorConfig) -> list[Any]:
             parameters=params,
             tags=["po-director", "director-dream"],
             description="Director nightly consolidation for " + cfg.workspace_dir,
+            work_pool_name="po",
+            **_MODULE_PATH,
+        ),
+        director_improve.to_deployment(
+            name=improve_name,
+            schedule=CronSchedule(cron=cfg.improve_cron),
+            parameters=params,
+            tags=["po-director", "director-improve"],
+            description="Director autonomy audit for " + cfg.workspace_dir,
             work_pool_name="po",
             **_MODULE_PATH,
         ),

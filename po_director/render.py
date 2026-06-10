@@ -199,3 +199,19 @@ def dream_prompt(cfg: DirectorConfig, **extra: object) -> str:
     if (persona_dir / "dreamer" / "prompt.md").is_file():
         return build_prompt(cfg, "dreamer", agents_dir=persona_dir, **extra)
     return build_prompt(cfg, "dreamer", **extra)
+
+
+def improve_prompt(cfg: DirectorConfig, **extra: object) -> str:
+    """Render the loop-audit / autonomy-ratchet ('improve') prompt.
+
+    Prefers a persona-shipped `<persona_dir>/improver/prompt.md`, else the
+    builtin improver. The caller (the flow) injects `audit_dir` (where the
+    operator-turn dumps live) and `audit_summary` (counts) after running the
+    extractor — this keeps the transcript-gathering in transport.
+    """
+    from po_director.persona import resolve_persona_dir
+
+    persona_dir = resolve_persona_dir(cfg.persona)
+    if (persona_dir / "improver" / "prompt.md").is_file():
+        return build_prompt(cfg, "improver", agents_dir=persona_dir, **extra)
+    return build_prompt(cfg, "improver", **extra)

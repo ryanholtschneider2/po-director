@@ -50,8 +50,8 @@ def test_auto_modes_get_sheriff_deployment(tmp_path: Path) -> None:
         deps = build_workspace_deployments(_cfg(tmp_path, merge_mode=mode))
         names = [d.name for d in deps]
         assert sheriff_deployment_name(_cfg(tmp_path)) in names, mode
-        # pulse/reflect/dream + sheriff
-        assert len(deps) == 4, mode
+        # pulse/reflect/dream/improve + sheriff
+        assert len(deps) == 5, mode
 
 
 def test_human_modes_skip_sheriff_deployment(tmp_path: Path) -> None:
@@ -59,7 +59,8 @@ def test_human_modes_skip_sheriff_deployment(tmp_path: Path) -> None:
         deps = build_workspace_deployments(_cfg(tmp_path, merge_mode=mode))
         names = [d.name for d in deps]
         assert sheriff_deployment_name(_cfg(tmp_path)) not in names, mode
-        assert len(deps) == 3, mode
+        # pulse/reflect/dream/improve (no sheriff)
+        assert len(deps) == 4, mode
 
 
 # ── on_pr_opened gating + best-effort ────────────────────────────────

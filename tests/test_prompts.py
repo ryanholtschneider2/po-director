@@ -39,6 +39,16 @@ _DREAMER_VARS = {
     "board": "bd ready: (none)",
     "transcripts": "- `/home/u/.claude/projects/-tmp-ws/abc.jsonl` (12 KB, 2026-06-09 03:00)",
 }
+_IMPROVER_VARS = {
+    "workspace_dir": "/tmp/ws",
+    "goal": "Ship the roadmap.",
+    "north_star": "open issues burned down",
+    "board": "bd ready: (none)",
+    "audit_dir": "/tmp/ws/.director/loop-audit/latest",
+    "audit_summary": '{"sessions": 12, "total_turns": 340}',
+    "match_terms": "ws, courtpro, director",
+    "since_days": "30",
+}
 _SHERIFF_VARS = {
     "feature_id": "ws-42",
     "workspace_dir": "/tmp/ws",
@@ -54,6 +64,7 @@ def test_prompt_files_exist() -> None:
     assert (AGENTS_DIR / "director" / "prompt.md").is_file()
     assert (AGENTS_DIR / "reflector" / "prompt.md").is_file()
     assert (AGENTS_DIR / "dreamer" / "prompt.md").is_file()
+    assert (AGENTS_DIR / "improver" / "prompt.md").is_file()
     assert (AGENTS_DIR / "pr-sheriff" / "prompt.md").is_file()
 
 
@@ -64,6 +75,16 @@ def test_dreamer_prompt_fully_renders() -> None:
     assert "STATE.md" in out
     assert ".director/memory/" in out
     assert "abc.jsonl" in out
+
+
+def test_improver_prompt_fully_renders() -> None:
+    out = render_template(AGENTS_DIR, "improver", **_IMPROVER_VARS)
+    assert not _LEFTOVER.search(out), f"unrendered placeholders: {_LEFTOVER.findall(out)}"
+    # Behavioral anchors: the ratchet, the dump dir, dispatch + Sheriff-merges.
+    assert "/tmp/ws/.director/loop-audit/latest" in out
+    assert "software-dev-agentic" in out
+    assert "PR Sheriff" in out
+    assert "docs/loop-audits/" in out
 
 
 def test_pr_sheriff_prompt_fully_renders() -> None:
