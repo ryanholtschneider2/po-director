@@ -26,7 +26,12 @@ from po_director.config import (
     load_config,
     save_config,
 )
-from po_director.deployments import build_workspace_deployments, deployment_names
+from po_director.deployments import (
+    AUTO_MERGE_MODES,
+    build_workspace_deployments,
+    deployment_names,
+    sheriff_deployment_name,
+)
 
 
 def _prompt(label: str, default: str) -> str:
@@ -128,10 +133,14 @@ def _start(cfg: DirectorConfig) -> str:
 def _stop(cfg: DirectorConfig) -> str:
     pulse_name, reflect_name, dream_name = deployment_names(cfg)
     results = []
+    # The Sheriff deployment is only applied for auto merge modes, but always
+    # attempt its delete — `prefect deployment delete` no-ops ("not found")
+    # when it was never applied, so stop stays idempotent across mode changes.
     for flow_name, dep_name in (
         ("director-pulse", pulse_name),
         ("director-reflect", reflect_name),
         ("director-dream", dream_name),
+        ("pr-sheriff", sheriff_deployment_name(cfg)),
     ):
         target = flow_name + "/" + dep_name
         proc = subprocess.run(
@@ -146,6 +155,9 @@ def _stop(cfg: DirectorConfig) -> str:
 
 def _status(cfg: DirectorConfig) -> str:
     pulse_name, reflect_name, dream_name = deployment_names(cfg)
+    deploy_line = pulse_name + ", " + reflect_name + ", " + dream_name
+    if cfg.merge_mode in AUTO_MERGE_MODES:
+        deploy_line += ", " + sheriff_deployment_name(cfg) + " (PR-triggered)"
     return "\n".join(
         [
             "Director status for " + cfg.workspace_dir,
@@ -160,7 +172,7 @@ def _status(cfg: DirectorConfig) -> str:
             "  pulse_cron:    " + cfg.pulse_cron,
             "  reflect_cron:  " + cfg.reflect_cron,
             "  dream_cron:    " + cfg.dream_cron,
-            "  deployments:   " + pulse_name + ", " + reflect_name + ", " + dream_name,
+            "  deployments:   " + deploy_line,
         ]
     )
 
