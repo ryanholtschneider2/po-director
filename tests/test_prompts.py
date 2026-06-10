@@ -106,6 +106,16 @@ def test_director_prompt_fully_renders() -> None:
     assert "/tmp/ws" in out
 
 
+def test_director_prompt_reporting_honesty_guardrail() -> None:
+    """Reporting status is gated on the critic's verdict, not a worker's self-claim."""
+    out = render_template(AGENTS_DIR, "director", **_DIRECTOR_VARS)
+    lowered = out.lower()
+    assert "commit hash" in lowered
+    assert "pass verdict" in lowered
+    # The anti-pattern it forbids: relaying a worker's unverified "done".
+    assert "self-claimed" in lowered
+
+
 def test_reflector_prompt_fully_renders() -> None:
     out = render_template(AGENTS_DIR, "reflector", **_REFLECTOR_VARS)
     assert not _LEFTOVER.search(out), f"unrendered placeholders: {_LEFTOVER.findall(out)}"
