@@ -91,11 +91,13 @@ def test_build_deployments(tmp_path: Path) -> None:
         pulse_cron="*/5 * * * *", reflect_cron="0 9 * * *", north_star=None,
     )
     deps = build_workspace_deployments(cfg)
-    # Default merge_mode is auto → pulse/reflect/dream + the PR-Sheriff.
-    assert len(deps) == 4
-    pulse_name, reflect_name, dream_name = deployment_names(cfg)
+    # Default merge_mode is auto → pulse/reflect/dream/improve + the PR-Sheriff.
+    assert len(deps) == 5
+    pulse_name, reflect_name, dream_name, improve_name = deployment_names(cfg)
     names = {d.name for d in deps}
-    assert names == {pulse_name, reflect_name, dream_name, sheriff_deployment_name(cfg)}
+    assert names == {
+        pulse_name, reflect_name, dream_name, improve_name, sheriff_deployment_name(cfg)
+    }
     for d in deps:
         assert d.parameters == {"workspace_dir": cfg.workspace_dir}
 

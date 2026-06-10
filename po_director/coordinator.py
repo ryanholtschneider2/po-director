@@ -24,14 +24,16 @@ from prefect_orchestration.agent_session import AgentSession
 from prefect_orchestration.backend_select import select_default_backend
 
 from po_director.config import DEFAULT_PERSONA, DirectorConfig, load_config
+from po_director.loop_audit import dump_operator_turns, match_terms_for
 from po_director.notify import post_slack
-from po_director.render import dream_prompt, persona_prompt, reflect_prompt
+from po_director.render import dream_prompt, improve_prompt, persona_prompt, reflect_prompt
 
 logger = logging.getLogger(__name__)
 
 _PROPOSAL_TITLE = "Director proposal — needs your approval"
 _REFLECTION_TITLE = "Director — daily reflection"
 _DREAM_TITLE = "Director — nightly consolidation"
+_IMPROVE_TITLE = "Director — autonomy audit"
 
 
 def persona_role(cfg: DirectorConfig, base: str) -> str:
@@ -231,6 +233,69 @@ def director_dream(
     return {
         "dry_run": False,
         "posted": posted,
+        "chars": len(result),
+        "session_id": session.session_id,
+    }
+
+
+@flow(name="director-improve")
+def director_improve(
+    workspace_dir: str,
+    *,
+    since_days: float = 30.0,
+    min_turns: int = 4,
+    dry_run: bool = False,
+    backend: object | None = None,
+) -> dict[str, object]:
+    """The autonomy ratchet: mine operator interventions, ship fixes.
+
+    Turns the operator's recent corrections / nudges / setup-help / taste
+    complaints into concrete system changes, so the system needs the human less
+    each cycle and creeps toward in-the-loop performance. Transport: gather the
+    operator's human turns from the workspace's (and its businesses') session
+    transcripts into a run dir. Judgment: the agent classifies the interventions,
+    writes a dated audit report, files beads for the top fixes, dispatches the
+    safe well-scoped ones via `software-dev-agentic` (merge decisions are left to
+    the PR Sheriff), and posts a digest. On `dry_run` short-circuits before any
+    agent turn.
+    """
+    log = _log()
+    cfg = load_config(workspace_dir)
+
+    if dry_run:
+        log.info("director-improve dry-run: skipping agent turn for %s", cfg.workspace_dir)
+        return {"dry_run": True, "posted": 0, "sessions": 0}
+
+    terms = match_terms_for(cfg.workspace_dir)
+    audit_dir = str(Path(cfg.workspace_dir) / ".director" / "loop-audit" / "latest")
+    summary = dump_operator_turns(
+        terms, since_days=since_days, min_turns=min_turns, out_dir=audit_dir
+    )
+    log.info(
+        "director-improve: %d sessions, %d operator turns from %s",
+        summary["sessions"],
+        summary["total_turns"],
+        terms,
+    )
+
+    session = _make_session(cfg, persona_role(cfg, "improver"), backend)
+    result = session.prompt(
+        improve_prompt(
+            cfg,
+            audit_dir=audit_dir,
+            audit_summary=json.dumps(summary, indent=2),
+            match_terms=", ".join(terms),
+            since_days=int(since_days),
+        )
+    )
+
+    posted = 0
+    if result.strip() and post_slack(cfg.slack_channel, _IMPROVE_TITLE, result):
+        posted = 1
+    return {
+        "dry_run": False,
+        "posted": posted,
+        "sessions": summary["sessions"],
         "chars": len(result),
         "session_id": session.session_id,
     }

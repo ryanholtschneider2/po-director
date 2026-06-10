@@ -38,6 +38,7 @@ PERSONA_DEFAULT_KEYS = (
     "pulse_cron",
     "reflect_cron",
     "dream_cron",
+    "improve_cron",
     "merge_mode",
     "merge_strategy",
 )

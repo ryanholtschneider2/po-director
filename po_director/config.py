@@ -20,6 +20,7 @@ ADE_CONFIG_NAME = ".ade/settings.toml"  # consolidated, agent-writable
 DEFAULT_PULSE_CRON = "*/10 * * * *"
 DEFAULT_REFLECT_CRON = "0 13 * * *"  # daily at 13:00 local
 DEFAULT_DREAM_CRON = "0 4 * * *"  # daily at 04:00 local — off-peak consolidation
+DEFAULT_IMPROVE_CRON = "0 5 * * 1"  # weekly Mon 05:00 — autonomy ratchet
 DEFAULT_GOAL_PATH = "goal.md"
 DEFAULT_NORTH_STAR = "open issues burned down"
 
@@ -53,6 +54,7 @@ class DirectorConfig:
     pulse_cron: str = DEFAULT_PULSE_CRON
     reflect_cron: str = DEFAULT_REFLECT_CRON
     dream_cron: str = DEFAULT_DREAM_CRON
+    improve_cron: str = DEFAULT_IMPROVE_CRON
     # Involvement axes.
     work_source: str = DEFAULT_WORK_SOURCE
     work_ask: str = DEFAULT_WORK_ASK
@@ -131,7 +133,7 @@ def _flatten_ade(data: dict[str, object]) -> dict[str, object]:
         out["slack_channel"] = notify["slack_channel"]
     schedule = data.get("schedule")
     if isinstance(schedule, dict):
-        for key in ("pulse_cron", "reflect_cron", "dream_cron"):
+        for key in ("pulse_cron", "reflect_cron", "dream_cron", "improve_cron"):
             if key in schedule:
                 out[key] = schedule[key]
     return out

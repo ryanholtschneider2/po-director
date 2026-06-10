@@ -19,7 +19,7 @@ po packs install --editable .
 
 # Start the Director watching the current directory.
 # First run prompts for the goal + North Star, writes .director.toml + goal.md,
-# and registers three cron deployments (pulse every 10m, reflect daily, dream nightly).
+# and registers four cron deployments (pulse 10m, reflect daily, dream nightly, improve weekly).
 po director start
 
 # Inspect / stop
@@ -85,7 +85,7 @@ flag wins for a one-off run. The `.ade/settings.toml` tables map onto config
 keys as: `[persona].name`, `[goals].{north_star, goal_path}`,
 `[involvement].{work_source, work_ask, merge_mode}`,
 `[merge].{strategy, ci_cmd}`, `[notify].slack_channel`, and
-`[schedule].{pulse_cron, reflect_cron, dream_cron}`. Unknown tables/keys are ignored, so a
+`[schedule].{pulse_cron, reflect_cron, dream_cron, improve_cron}`. Unknown tables/keys are ignored, so a
 newer config never crashes an older pack.
 
 ### Why no `extends =` (shared org-level base config)
@@ -111,6 +111,15 @@ the one layering seam.
   gate "yes", the next pulse dispatches it via `po run`.
 - **`director-reflect`** (daily) — a one-page written reflection on the goal,
   posted to Slack.
+- **`director-improve`** (weekly) — the **autonomy ratchet**. Mines the
+  operator's recent corrections / nudges / setup-help / taste complaints out of
+  the session transcripts (this workspace + its businesses), turns the recurring
+  ones into concrete system fixes, writes a dated audit to `docs/loop-audits/`,
+  files beads for the top fixes, dispatches the safe well-scoped ones via
+  `software-dev-agentic` (the **PR Sheriff owns the merge decision** — the flow
+  never merges), and posts a digest. The point: each pass the system needs the
+  operator a little less and creeps toward his in-the-loop quality. The flow is
+  transport (gather the operator's turns); the agent owns the judgment.
 - **`director-dream`** (daily, off-peak) — nightly memory consolidation. Reads
   the day's session transcripts (`~/.claude/projects/<workspace-slug>/*.jsonl`),
   distils durable facts / decisions / lessons into the curated company brain at
@@ -138,6 +147,7 @@ layer *under* `.ade/settings.toml`.
 | `pulse_cron` | `*/10 * * * *` | pulse schedule |
 | `reflect_cron` | `0 13 * * *` | reflection schedule (daily) |
 | `dream_cron` | `0 4 * * *` | nightly consolidation schedule (daily, off-peak) |
+| `improve_cron` | `0 5 * * 1` | autonomy-audit schedule (weekly, Mon 05:00) |
 | `approval_mode` | `always` | `always` \| `batches` \| `consequential` |
 
 `approval_mode`:
@@ -193,7 +203,7 @@ def get_persona_dir() -> Path:
 The directory must contain `prompt.md` (the pulse persona prompt) and may contain:
 
 - `config.toml` — per-persona defaults for any of `work_source`, `work_ask`,
-  `pulse_cron`, `reflect_cron`, `dream_cron`, `merge_mode`, `merge_strategy` (overridden by
+  `pulse_cron`, `reflect_cron`, `dream_cron`, `improve_cron`, `merge_mode`, `merge_strategy` (overridden by
   workspace settings and CLI flags).
 - `reflector/prompt.md` — a persona-specific reflection prompt; when absent the
   builtin reflector is used.
