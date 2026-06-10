@@ -14,6 +14,7 @@ from po_director.config import DEFAULT_NORTH_STAR, load_config
 from po_director.deployments import (
     build_workspace_deployments,
     deployment_names,
+    sheriff_deployment_name,
     workspace_slug,
 )
 
@@ -90,10 +91,11 @@ def test_build_deployments(tmp_path: Path) -> None:
         pulse_cron="*/5 * * * *", reflect_cron="0 9 * * *", north_star=None,
     )
     deps = build_workspace_deployments(cfg)
-    assert len(deps) == 3
+    # Default merge_mode is auto → pulse/reflect/dream + the PR-Sheriff.
+    assert len(deps) == 4
     pulse_name, reflect_name, dream_name = deployment_names(cfg)
     names = {d.name for d in deps}
-    assert names == {pulse_name, reflect_name, dream_name}
+    assert names == {pulse_name, reflect_name, dream_name, sheriff_deployment_name(cfg)}
     for d in deps:
         assert d.parameters == {"workspace_dir": cfg.workspace_dir}
 
