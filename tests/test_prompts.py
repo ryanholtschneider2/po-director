@@ -26,8 +26,15 @@ _DIRECTOR_VARS = {
     "merge_strategy": "pr",
     "memory": "(no prior handoff)",
 }
-_REFLECTOR_VARS = {
+_REPORTER_VARS = {
     "workspace_dir": "/tmp/ws",
+    "goal": "Ship the roadmap.",
+    "north_star": "open issues burned down",
+    "board": "bd ready: (none)",
+}
+_ROADMAPPER_VARS = {
+    "workspace_dir": "/tmp/ws",
+    "persona": "director",
     "goal": "Ship the roadmap.",
     "north_star": "open issues burned down",
     "board": "bd ready: (none)",
@@ -62,10 +69,25 @@ _LEFTOVER = re.compile(r"\{\{.*?\}\}")
 
 def test_prompt_files_exist() -> None:
     assert (AGENTS_DIR / "director" / "prompt.md").is_file()
-    assert (AGENTS_DIR / "reflector" / "prompt.md").is_file()
+    assert (AGENTS_DIR / "roadmapper" / "prompt.md").is_file()
+    assert (AGENTS_DIR / "reporter" / "prompt.md").is_file()
     assert (AGENTS_DIR / "dreamer" / "prompt.md").is_file()
     assert (AGENTS_DIR / "improver" / "prompt.md").is_file()
     assert (AGENTS_DIR / "pr-sheriff" / "prompt.md").is_file()
+    # The reflector prompt was renamed to reporter — it must be gone.
+    assert not (AGENTS_DIR / "reflector" / "prompt.md").is_file()
+
+
+def test_roadmapper_prompt_fully_renders() -> None:
+    out = render_template(AGENTS_DIR, "roadmapper", **_ROADMAPPER_VARS)
+    assert not _LEFTOVER.search(out), f"unrendered placeholders: {_LEFTOVER.findall(out)}"
+    # Behavioral anchors: maintains ROADMAP.md, decomposes to beads, writes the
+    # TL;DR, and does NOT dispatch builds (that's the pulse).
+    assert "ROADMAP.md" in out
+    assert "roadmap-tldr.md" in out
+    assert "director" in out  # persona substituted in
+    lowered = out.lower()
+    assert "do not" in lowered and "dispatch" in lowered
 
 
 def test_dreamer_prompt_fully_renders() -> None:
@@ -116,7 +138,11 @@ def test_director_prompt_reporting_honesty_guardrail() -> None:
     assert "self-claimed" in lowered
 
 
-def test_reflector_prompt_fully_renders() -> None:
-    out = render_template(AGENTS_DIR, "reflector", **_REFLECTOR_VARS)
+def test_reporter_prompt_fully_renders() -> None:
+    out = render_template(AGENTS_DIR, "reporter", **_REPORTER_VARS)
     assert not _LEFTOVER.search(out), f"unrendered placeholders: {_LEFTOVER.findall(out)}"
     assert "open issues burned down" in out
+    # New report behavior: what I did + what needs the operator (open gates).
+    lowered = out.lower()
+    assert "what i did" in lowered
+    assert "--label human --status open" in out

@@ -56,6 +56,44 @@ def test_build_board_uses_command_output(tmp_path: Path, monkeypatch) -> None:
     assert "### ready" in board and "OUT:ready" in board
     assert ["bd", "list", "--label", "human", "--status", "open"] in seen
     assert ["po", "status"] in seen
+    # No fresh roadmap-tldr.md → no Plan update section.
+    assert "Plan update" not in board
+
+
+def test_build_board_includes_fresh_plan_update(tmp_path: Path, monkeypatch) -> None:
+    mem = tmp_path / ".director"
+    mem.mkdir()
+    (mem / "roadmap-tldr.md").write_text(
+        "# Roadmap update\n\n- filed epic FOO\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(render, "_run", lambda cmd, cwd: "(none)")
+    board = render.build_board(_cfg(tmp_path))
+    assert "### Plan update" in board
+    assert "filed epic FOO" in board
+
+
+def test_build_board_skips_stale_plan_update(tmp_path: Path, monkeypatch) -> None:
+    import os
+    import time
+
+    mem = tmp_path / ".director"
+    mem.mkdir()
+    tldr = mem / "roadmap-tldr.md"
+    tldr.write_text("- old plan\n", encoding="utf-8")
+    old = time.time() - 5 * 3600  # older than the 2h freshness window
+    os.utime(tldr, (old, old))
+    monkeypatch.setattr(render, "_run", lambda cmd, cwd: "(none)")
+    board = render.build_board(_cfg(tmp_path))
+    assert "Plan update" not in board
+
+
+def test_roadmap_prompt_renders_with_persona(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "goal.md").write_text("Win.", encoding="utf-8")
+    monkeypatch.setattr(render, "_run", lambda cmd, cwd: "(none)")
+    out = render.roadmap_prompt(_cfg(tmp_path, north_star="velocity"))
+    assert "ROADMAP.md" in out
+    assert "roadmap-tldr.md" in out
+    assert "{{" not in out
 
 
 def test_build_prompt_renders_with_state(tmp_path: Path, monkeypatch) -> None:

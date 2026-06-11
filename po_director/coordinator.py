@@ -1,4 +1,5 @@
-"""The Director flows: `director-pulse` (heartbeat) and `director-reflect`.
+"""The Director flows: `director-pulse` (heartbeat), `director-roadmap`
+(hourly planning), `director-report` (nightly), `director-dream`, `director-improve`.
 
 Both render a persona prompt from gathered workspace state, run one agent turn
 via `prefect_orchestration.AgentSession`, and post to Slack via the flow (not
@@ -16,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import subprocess
+import time
 from pathlib import Path
 
 from prefect import flow, get_run_logger
@@ -26,12 +28,19 @@ from prefect_orchestration.backend_select import select_default_backend
 from po_director.config import DEFAULT_PERSONA, DirectorConfig, load_config
 from po_director.loop_audit import dump_operator_turns, match_terms_for
 from po_director.notify import post_slack
-from po_director.render import dream_prompt, improve_prompt, persona_prompt, reflect_prompt
+from po_director.render import (
+    dream_prompt,
+    improve_prompt,
+    persona_prompt,
+    report_prompt,
+    roadmap_prompt,
+)
 
 logger = logging.getLogger(__name__)
 
 _PROPOSAL_TITLE = "Director proposal — needs your approval"
-_REFLECTION_TITLE = "Director — daily reflection"
+_ROADMAP_TITLE = "Plan updated"
+_REPORT_TITLE = "Director — nightly report"
 _DREAM_TITLE = "Director — nightly consolidation"
 _IMPROVE_TITLE = "Director — autonomy audit"
 
@@ -81,6 +90,24 @@ def _gate_map(workspace_dir: str) -> dict[str, str]:
         logger.warning("bd list --label human --json returned non-JSON output")
         return {}
     return {str(r["id"]): str(r.get("title", "")) for r in rows if isinstance(r, dict) and "id" in r}
+
+
+def _fresh_roadmap_tldr(workspace_dir: str, *, since: float) -> str:
+    """The roadmap TL;DR the agent wrote this run, or "" if it didn't refresh it.
+
+    The roadmapper writes `.director/roadmap-tldr.md` after updating ROADMAP.md +
+    beads. We only post when the file's mtime is at/after `since` (the turn's
+    start), so a no-change pass — or a stale TL;DR from an earlier run — posts
+    nothing instead of re-announcing an old plan update.
+    """
+    tldr = Path(workspace_dir) / ".director" / "roadmap-tldr.md"
+    try:
+        if not tldr.is_file() or tldr.stat().st_mtime < since:
+            return ""
+        return tldr.read_text(encoding="utf-8").strip()
+    except OSError:
+        logger.exception("reading roadmap-tldr.md failed")
+        return ""
 
 
 def _build_backend(factory: object, issue: str, role: str) -> object:
@@ -173,26 +200,76 @@ def director_pulse(
     }
 
 
-@flow(name="director-reflect")
-def director_reflect(
+@flow(name="director-roadmap")
+def director_roadmap(
     workspace_dir: str,
     *,
     dry_run: bool = False,
     backend: object | None = None,
 ) -> dict[str, object]:
-    """Daily one-page reflection, posted to Slack."""
+    """Hourly planning pass: maintain ROADMAP.md and decompose it into beads.
+
+    Runs as the SAME persona doing a dedicated PLANNING turn (role
+    `roadmapper`). The agent assesses progress since the last roadmap pass,
+    updates `ROADMAP.md` at the workspace root (the durable higher-level plan),
+    decomposes it into dependency-wired, prioritized beads (coalescing against
+    existing ones), and writes a timestamped TL;DR of what changed this pass to
+    `.director/roadmap-tldr.md`. It does NOT dispatch builds (the pulse does)
+    and does NOT merge.
+
+    Transport: the flow posts that TL;DR to Slack titled "Plan updated" when the
+    agent refreshed it this run, so the operator sees the plan moved without
+    reading the whole roadmap. On `dry_run` short-circuits before any agent turn.
+    """
     log = _log()
     cfg = load_config(workspace_dir)
 
     if dry_run:
-        log.info("director-reflect dry-run: skipping agent turn for %s", cfg.workspace_dir)
+        log.info("director-roadmap dry-run: skipping agent turn for %s", cfg.workspace_dir)
+        return {"dry_run": True, "posted": 0, "tldr": False}
+
+    started = time.time()
+    session = _make_session(cfg, persona_role(cfg, "roadmapper"), backend)
+    result = session.prompt(roadmap_prompt(cfg))
+
+    tldr = _fresh_roadmap_tldr(cfg.workspace_dir, since=started)
+    posted = 0
+    if tldr and post_slack(cfg.slack_channel, _ROADMAP_TITLE, tldr):
+        posted = 1
+    return {
+        "dry_run": False,
+        "posted": posted,
+        "tldr": bool(tldr),
+        "chars": len(result),
+        "session_id": session.session_id,
+    }
+
+
+@flow(name="director-report")
+def director_report(
+    workspace_dir: str,
+    *,
+    dry_run: bool = False,
+    backend: object | None = None,
+) -> dict[str, object]:
+    """Nightly report: what the Director DID since the last report, posted to Slack.
+
+    One agent turn (role `reporter`) that summarizes the day's actions
+    (dispatches, merges, decisions), then bubbles up what needs the operator:
+    open `human`-labeled gates, decisions awaited, and blockers.
+    """
+    log = _log()
+    cfg = load_config(workspace_dir)
+
+    if dry_run:
+        log.info("director-report dry-run: skipping agent turn for %s", cfg.workspace_dir)
         return {"dry_run": True, "posted": 0}
 
-    session = _make_session(cfg, persona_role(cfg, "reflector"), backend)
-    result = session.prompt(reflect_prompt(cfg))
+    session = _make_session(cfg, persona_role(cfg, "reporter"), backend)
+    result = session.prompt(report_prompt(cfg))
 
     posted = 0
-    if result.strip() and post_slack(cfg.slack_channel, _REFLECTION_TITLE, result):
+    if result.strip() and post_slack(cfg.slack_channel, _REPORT_TITLE, result):
         posted = 1
     return {
         "dry_run": False,

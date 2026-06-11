@@ -12,12 +12,13 @@ dependencies = [
 # ─── Entry points ── core's `po list` / `po run <name>` auto-discover these.
 [project.entry-points."po.formulas"]
 director-pulse = "po_director.coordinator:director_pulse"
-director-reflect = "po_director.coordinator:director_reflect"
+director-roadmap = "po_director.coordinator:director_roadmap"
+director-report = "po_director.coordinator:director_report"
 director-dream = "po_director.coordinator:director_dream"
 director-improve = "po_director.coordinator:director_improve"
 pr-sheriff = "po_director.sheriff:pr_sheriff"
 
-# Scheduled deployments (pulse cron + reflect cron). `po deploy` calls register().
+# Scheduled deployments (pulse/roadmap/report/dream/improve crons). `po deploy` calls register().
 [project.entry-points."po.deployments"]
 po-director = "po_director.deployments:register"
 

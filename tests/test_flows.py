@@ -103,15 +103,74 @@ def test_new_gate_no_channel_no_post(tmp_path: Path, monkeypatch) -> None:
     assert out["posted"] == 0
 
 
-def test_reflect_posts_when_output(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr(coord, "reflect_prompt", lambda *a, **k: "PROMPT")
+def test_report_posts_when_output(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(coord, "report_prompt", lambda *a, **k: "PROMPT")
     posts: list[tuple] = []
     monkeypatch.setattr(coord, "post_slack", lambda *a, **k: posts.append(a) or True)
-    out = coord.director_reflect.fn(
-        _ws(tmp_path, slack_channel="C123"), backend=FakeBackend("today we shipped X")
+    out = coord.director_report.fn(
+        _ws(tmp_path, slack_channel="C123"), backend=FakeBackend("today I dispatched X")
     )
     assert out["posted"] == 1
     assert len(posts) == 1
+    assert posts[0][1] == coord._REPORT_TITLE
+
+
+def test_report_dry_run_short_circuits(tmp_path: Path, monkeypatch) -> None:
+    called = {"prompt": False}
+    monkeypatch.setattr(
+        coord, "report_prompt", lambda *a, **k: called.__setitem__("prompt", True) or "x"
+    )
+    out = coord.director_report.fn(_ws(tmp_path), dry_run=True)
+    assert out["dry_run"] is True and out["posted"] == 0
+    assert called["prompt"] is False
+
+
+def test_roadmap_dry_run_short_circuits(tmp_path: Path, monkeypatch) -> None:
+    called = {"prompt": False}
+    monkeypatch.setattr(
+        coord, "roadmap_prompt", lambda *a, **k: called.__setitem__("prompt", True) or "x"
+    )
+    out = coord.director_roadmap.fn(_ws(tmp_path), dry_run=True)
+    assert out["dry_run"] is True and out["posted"] == 0 and out["tldr"] is False
+    assert called["prompt"] is False
+
+
+def test_roadmap_posts_tldr_when_agent_writes_it(tmp_path: Path, monkeypatch) -> None:
+    # The agent (FakeBackend) "writes" the TL;DR by us creating the file during
+    # the prompt render; the flow must read it and post under the Plan-updated title.
+    monkeypatch.setattr(coord, "roadmap_prompt", lambda *a, **k: "PROMPT")
+    posts: list[tuple] = []
+    monkeypatch.setattr(coord, "post_slack", lambda *a, **k: posts.append(a) or True)
+
+    class WritingBackend(FakeBackend):
+        def run(self, prompt, **kw):
+            mem = Path(tmp_path) / ".director"
+            mem.mkdir(parents=True, exist_ok=True)
+            (mem / "roadmap-tldr.md").write_text(
+                "# Roadmap update\n\n- filed epic X\n", encoding="utf-8"
+            )
+            return super().run(prompt, **kw)
+
+    out = coord.director_roadmap.fn(
+        _ws(tmp_path, slack_channel="C123"), backend=WritingBackend("planned")
+    )
+    assert out["tldr"] is True
+    assert out["posted"] == 1
+    assert posts and posts[0][1] == coord._ROADMAP_TITLE
+    assert "filed epic X" in posts[0][2]
+
+
+def test_roadmap_no_tldr_posts_nothing(tmp_path: Path, monkeypatch) -> None:
+    # A pass that writes no TL;DR (or only a stale one) posts nothing.
+    monkeypatch.setattr(coord, "roadmap_prompt", lambda *a, **k: "PROMPT")
+    posts: list[tuple] = []
+    monkeypatch.setattr(coord, "post_slack", lambda *a, **k: posts.append(a) or True)
+    out = coord.director_roadmap.fn(
+        _ws(tmp_path, slack_channel="C123"), backend=FakeBackend("planned, no change")
+    )
+    assert out["tldr"] is False
+    assert out["posted"] == 0
+    assert posts == []
 
 
 def test_dream_dry_run_short_circuits(tmp_path: Path, monkeypatch) -> None:

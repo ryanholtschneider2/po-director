@@ -19,7 +19,8 @@ po packs install --editable .
 
 # Start the Director watching the current directory.
 # First run prompts for the goal + North Star, writes .director.toml + goal.md,
-# and registers four cron deployments (pulse 10m, reflect daily, dream nightly, improve weekly).
+# and registers five cron deployments (pulse 20m, roadmap hourly, report nightly,
+# dream nightly, improve nightly).
 po director start
 
 # Inspect / stop
@@ -49,11 +50,12 @@ name = "ceo"                       # which standing agent runs (default: directo
 north_star = "MRR > $10k/mo"       # the metric the persona holds
 
 [notify]
-slack_channel = "C08LB4V9ZJ8"      # where proposals + reflections post
+slack_channel = "C08LB4V9ZJ8"      # where proposals + reports post
 
 [schedule]                         # optional — omit to keep the persona/built-in crons
 pulse_cron = "*/15 * * * *"
-reflect_cron = "0 9 * * *"
+roadmap_cron = "0 * * * *"
+report_cron = "0 21 * * *"         # legacy reflect_cron still migrates to this
 ```
 
 Pair it with a one-line goal:
@@ -85,8 +87,9 @@ flag wins for a one-off run. The `.ade/settings.toml` tables map onto config
 keys as: `[persona].name`, `[goals].{north_star, goal_path}`,
 `[involvement].{work_source, work_ask, merge_mode}`,
 `[merge].{strategy, ci_cmd}`, `[notify].slack_channel`, and
-`[schedule].{pulse_cron, reflect_cron, dream_cron, improve_cron}`. Unknown tables/keys are ignored, so a
-newer config never crashes an older pack.
+`[schedule].{pulse_cron, roadmap_cron, report_cron, dream_cron, improve_cron}`
+(a legacy `[schedule].reflect_cron` migrates to `report_cron`). Unknown
+tables/keys are ignored, so a newer config never crashes an older pack.
 
 ### Why no `extends =` (shared org-level base config)
 
@@ -105,13 +108,25 @@ the one layering seam.
 
 ## How it works
 
-- **`director-pulse`** (every 10 min) — gather goal + board + memory → render
-  the Director persona → run one agent turn → it proposes work by filing a
-  `bd human` gate; the flow posts the proposal to Slack. When you answer the
-  gate "yes", the next pulse dispatches it via `po run`.
-- **`director-reflect`** (daily) — a one-page written reflection on the goal,
-  posted to Slack.
-- **`director-improve`** (weekly) — the **autonomy ratchet**. Mines the
+- **`director-pulse`** (every 20 min) — gather goal + board + memory → render
+  the Director persona → run one agent turn → it dispatches or proposes work
+  (per `work_ask`); the flow posts any new proposal gate to Slack. Its board
+  snapshot includes a **Plan update** section carrying the latest roadmap TL;DR
+  (if refreshed in the last ~2h), so a pulse reacts to a changed plan
+  automatically.
+- **`director-roadmap`** (hourly) — the **planning pass**. Runs as the same
+  persona doing a dedicated planning turn (it does NOT dispatch builds or merge):
+  assess progress since the last pass, maintain `ROADMAP.md` at the workspace
+  root (the durable higher-level plan derived from the goal + North Star), and
+  decompose its current focus into dependency-wired, prioritized, dispatch-ready
+  beads (coalescing against existing ones). It writes a timestamped TL;DR of what
+  changed to `.director/roadmap-tldr.md`, which the flow posts to Slack titled
+  "Plan updated" and the next pulse picks up in its board snapshot.
+- **`director-report`** (nightly, ~21:00) — the end-of-day report. Summarizes
+  what the Director *did* since the last report and bubbles up what needs the
+  operator: open `human`-labeled gates, decisions awaited, and blockers. Posted
+  to Slack. (Renamed from `director-reflect`; a legacy `reflect_cron` migrates.)
+- **`director-improve`** (nightly) — the **autonomy ratchet**. Mines the
   operator's recent corrections / nudges / setup-help / taste complaints out of
   the session transcripts (this workspace + its businesses), turns the recurring
   ones into concrete system fixes, writes a dated audit to `docs/loop-audits/`,
@@ -144,10 +159,11 @@ layer *under* `.ade/settings.toml`.
 | `north_star` | (asked at start) | the metric to hold |
 | `persona` | `director` | the standing agent's identity (see [Personas](#personas)) |
 | `slack_channel` | `None` | Slack channel id for posts; no posting when unset |
-| `pulse_cron` | `*/10 * * * *` | pulse schedule |
-| `reflect_cron` | `0 13 * * *` | reflection schedule (daily) |
+| `pulse_cron` | `*/20 * * * *` | pulse schedule |
+| `roadmap_cron` | `0 * * * *` | roadmap planning schedule (hourly) |
+| `report_cron` | `0 21 * * *` | nightly report schedule (legacy `reflect_cron` migrates here) |
 | `dream_cron` | `0 4 * * *` | nightly consolidation schedule (daily, off-peak) |
-| `improve_cron` | `0 5 * * 1` | autonomy-audit schedule (weekly, Mon 05:00) |
+| `improve_cron` | `0 5 * * *` | autonomy-audit schedule (nightly, 05:00) |
 | `approval_mode` | `always` | `always` \| `batches` \| `consequential` |
 
 `approval_mode`:
@@ -160,8 +176,8 @@ layer *under* `.ade/settings.toml`.
 
 A **persona** is the standing agent's identity for a workspace — by default
 `director` (the builtin), but any installed pack can ship its own (`ceo`, `pm`,
-…). Selecting a persona swaps the pulse prompt and, optionally, the reflection
-prompt and a set of per-persona config defaults.
+…). Selecting a persona swaps the pulse prompt and, optionally, the task prompts
+(report / roadmap / dream / improve) and a set of per-persona config defaults.
 
 ```bash
 po director start --persona ceo     # pulse with the ceo persona's prompt
@@ -203,18 +219,21 @@ def get_persona_dir() -> Path:
 The directory must contain `prompt.md` (the pulse persona prompt) and may contain:
 
 - `config.toml` — per-persona defaults for any of `work_source`, `work_ask`,
-  `pulse_cron`, `reflect_cron`, `dream_cron`, `improve_cron`, `merge_mode`, `merge_strategy` (overridden by
-  workspace settings and CLI flags).
-- `reflector/prompt.md` — a persona-specific reflection prompt; when absent the
-  builtin reflector is used.
+  `pulse_cron`, `roadmap_cron`, `report_cron`, `dream_cron`, `improve_cron`,
+  `merge_mode`, `merge_strategy` (overridden by workspace settings and CLI flags).
+- `roadmapper/prompt.md` — a persona-specific hourly-planning prompt; when absent
+  the builtin roadmapper is used (it reads the persona name as `{{persona}}` so
+  it runs as that persona doing a planning pass).
+- `reporter/prompt.md` — a persona-specific nightly-report prompt; when absent
+  the builtin reporter is used.
 - `dreamer/prompt.md` — a persona-specific nightly-consolidation prompt; when
   absent the builtin dreamer is used. It additionally receives `{{transcripts}}`
   (the day's session files to consolidate).
 
 Prompts use po's `{{var}}` substitution. The pulse prompt may reference
-`{{workspace_dir}}`, `{{goal}}`, `{{north_star}}`, `{{work_source}}`,
-`{{work_ask}}`, `{{merge_mode}}`, `{{merge_strategy}}`, `{{board}}`, and
-`{{memory}}`. Run `po packs update` after registering the entry point so
+`{{workspace_dir}}`, `{{persona}}`, `{{goal}}`, `{{north_star}}`,
+`{{work_source}}`, `{{work_ask}}`, `{{merge_mode}}`, `{{merge_strategy}}`,
+`{{board}}`, and `{{memory}}`. Run `po packs update` after registering the entry point so
 `importlib.metadata` sees it.
 
 EP-registered personas take precedence over po_director's builtin

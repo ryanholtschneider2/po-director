@@ -2,7 +2,7 @@
 
 A persona pack is faked by monkeypatching `persona._persona_entry_points` to
 point a name at a tmp directory shipping `prompt.md` (+ optional `config.toml`,
-`reflector/prompt.md`). No real pack install needed.
+`reporter/prompt.md`). No real pack install needed.
 """
 
 from __future__ import annotations
@@ -41,17 +41,17 @@ def _install_persona(
     *,
     prompt: str = "# {{north_star}} persona for {{workspace_dir}}\n",
     config_toml: str | None = None,
-    reflector_prompt: str | None = None,
+    reporter_prompt: str | None = None,
 ) -> Path:
     """Materialise a fake persona dir and register it as an EP."""
     persona_dir.mkdir(parents=True, exist_ok=True)
     (persona_dir / "prompt.md").write_text(prompt, encoding="utf-8")
     if config_toml is not None:
         (persona_dir / "config.toml").write_text(config_toml, encoding="utf-8")
-    if reflector_prompt is not None:
-        refl = persona_dir / "reflector"
-        refl.mkdir(parents=True, exist_ok=True)
-        (refl / "prompt.md").write_text(reflector_prompt, encoding="utf-8")
+    if reporter_prompt is not None:
+        rep = persona_dir / "reporter"
+        rep.mkdir(parents=True, exist_ok=True)
+        (rep / "prompt.md").write_text(reporter_prompt, encoding="utf-8")
     monkeypatch.setattr(
         persona, "_persona_entry_points", lambda: {name: _FakeEP(name, persona_dir)}
     )
@@ -165,14 +165,14 @@ def test_full_precedence_chain_end_to_end(tmp_path: Path, monkeypatch) -> None:
         monkeypatch,
         "ceo",
         tmp_path / "ceo",
-        # persona default: reflect_cron unset everywhere else → persona wins it.
-        config_toml='reflect_cron = "0 6 * * *"\nwork_source = "issues"\n',
+        # persona default: report_cron unset everywhere else → persona wins it.
+        config_toml='report_cron = "0 6 * * *"\nwork_source = "issues"\n',
     )
     cfg = load_config(ws, persona_override="ceo")
     assert cfg.persona == "ceo"  # CLI override wins the persona field
     assert cfg.north_star == "ade-star"  # .ade layer
     assert cfg.work_ask == "auto"  # legacy .director.toml layer
-    assert cfg.reflect_cron == "0 6 * * *"  # persona-default layer
+    assert cfg.report_cron == "0 6 * * *"  # persona-default layer
     assert cfg.pulse_cron == DEFAULT_PULSE_CRON  # nothing set → built-in default
 
 
@@ -208,11 +208,12 @@ def test_default_persona_unchanged_when_nothing_set(tmp_path: Path) -> None:
 
 def test_deployment_names_byte_identical_for_default(tmp_path: Path) -> None:
     cfg = DirectorConfig(workspace_dir=str(tmp_path))  # persona defaults to director
-    pulse, reflect, dream, improve = deployment_names(cfg)
+    pulse, roadmap, report, dream, improve = deployment_names(cfg)
     # No persona component — exactly the legacy shape.
     slug = pulse[len("director-pulse-"):]
     assert pulse == "director-pulse-" + slug
-    assert reflect == "director-reflect-" + slug
+    assert roadmap == "director-roadmap-" + slug
+    assert report == "director-report-" + slug
     assert dream == "director-dream-" + slug
     assert improve == "director-improve-" + slug
     assert "ceo" not in pulse
@@ -222,9 +223,9 @@ def test_deployment_names_persona_suffixed_and_distinct(tmp_path: Path) -> None:
     default = DirectorConfig(workspace_dir=str(tmp_path))
     ceo = DirectorConfig(workspace_dir=str(tmp_path), persona="ceo")
     d_pulse, *_ = deployment_names(default)
-    c_pulse, c_reflect, c_dream, c_improve = deployment_names(ceo)
+    c_pulse, c_roadmap, c_report, c_dream, c_improve = deployment_names(ceo)
     assert c_pulse != d_pulse  # personas don't collide on one workspace
-    assert all("ceo" in n for n in (c_pulse, c_reflect, c_dream, c_improve))
+    assert all("ceo" in n for n in (c_pulse, c_roadmap, c_report, c_dream, c_improve))
     assert c_pulse.startswith("director-pulse-")
 
 
@@ -252,26 +253,26 @@ def test_persona_prompt_renders_pack_persona(tmp_path: Path, monkeypatch) -> Non
     assert "{{" not in out
 
 
-def test_reflect_prompt_prefers_persona_reflector(tmp_path: Path, monkeypatch) -> None:
+def test_report_prompt_prefers_persona_reporter(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(render, "_run", lambda cmd, cwd: "(none)")
     _install_persona(
         monkeypatch,
         "ceo",
         tmp_path / "ceo",
-        reflector_prompt="# CEO reflection on {{north_star}}\n",
+        reporter_prompt="# CEO report on {{north_star}}\n",
     )
     cfg = DirectorConfig(workspace_dir=str(tmp_path), persona="ceo", north_star="MRR")
-    out = render.reflect_prompt(cfg)
-    assert "CEO reflection" in out
+    out = render.report_prompt(cfg)
+    assert "CEO report" in out
 
 
-def test_reflect_prompt_falls_back_to_builtin(tmp_path: Path, monkeypatch) -> None:
+def test_report_prompt_falls_back_to_builtin(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(render, "_run", lambda cmd, cwd: "(none)")
-    # persona ships no reflector → builtin reflector renders.
+    # persona ships no reporter → builtin reporter renders.
     _install_persona(monkeypatch, "ceo", tmp_path / "ceo")
     cfg = DirectorConfig(workspace_dir=str(tmp_path), persona="ceo")
-    builtin = render.build_prompt(cfg, "reflector")
-    assert render.reflect_prompt(cfg) == builtin
+    builtin = render.build_prompt(cfg, "reporter")
+    assert render.report_prompt(cfg) == builtin
 
 
 def test_unknown_persona_in_config_fails_loudly(tmp_path: Path, monkeypatch) -> None:
