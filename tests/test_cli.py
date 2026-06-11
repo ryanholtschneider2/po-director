@@ -30,7 +30,8 @@ def test_first_run_creates_config_and_goal(tmp_path: Path) -> None:
         merge_strategy=None,
         approval_mode=None,
         pulse_cron=None,
-        reflect_cron=None,
+        roadmap_cron=None,
+        report_cron=None,
         north_star=None,
     )
     assert (tmp_path / ".director.toml").is_file()
@@ -88,15 +89,17 @@ def test_build_deployments(tmp_path: Path) -> None:
     cfg = _ensure_config(
         str(tmp_path), channel=None, work_source=None, work_ask=None,
         merge_mode=None, merge_strategy=None, approval_mode=None,
-        pulse_cron="*/5 * * * *", reflect_cron="0 9 * * *", north_star=None,
+        pulse_cron="*/5 * * * *", roadmap_cron="0 * * * *",
+        report_cron="0 21 * * *", north_star=None,
     )
     deps = build_workspace_deployments(cfg)
-    # Default merge_mode is auto → pulse/reflect/dream/improve + the PR-Sheriff.
-    assert len(deps) == 5
-    pulse_name, reflect_name, dream_name, improve_name = deployment_names(cfg)
+    # Default merge_mode is auto → pulse/roadmap/report/dream/improve + the PR-Sheriff.
+    assert len(deps) == 6
+    pulse_name, roadmap_name, report_name, dream_name, improve_name = deployment_names(cfg)
     names = {d.name for d in deps}
     assert names == {
-        pulse_name, reflect_name, dream_name, improve_name, sheriff_deployment_name(cfg)
+        pulse_name, roadmap_name, report_name, dream_name, improve_name,
+        sheriff_deployment_name(cfg),
     }
     for d in deps:
         assert d.parameters == {"workspace_dir": cfg.workspace_dir}

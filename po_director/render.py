@@ -119,9 +119,43 @@ def recent_transcripts(cfg: DirectorConfig, *, within_hours: float = 24.0) -> st
     return "\n".join(lines)
 
 
+# How fresh a roadmap TL;DR must be to surface in the pulse's board snapshot.
+# The roadmapper runs hourly, so a 2h window covers "the plan changed since the
+# last pulse saw it" without resurfacing a stale plan-update indefinitely.
+_ROADMAP_TLDR_NAME = "roadmap-tldr.md"
+_ROADMAP_TLDR_FRESH_HOURS = 2.0
+
+
+def _plan_update(cfg: DirectorConfig, *, within_hours: float = _ROADMAP_TLDR_FRESH_HOURS) -> str:
+    """The roadmapper's latest TL;DR, if it was refreshed within `within_hours`.
+
+    The hourly `director-roadmap` pass writes `.director/roadmap-tldr.md` after
+    it updates ROADMAP.md + beads. Surfacing it in the pulse board means the next
+    pulse sees that the plan changed without re-deriving it. Returns "" when the
+    file is missing or stale, so `build_board` only adds the section when there's
+    something fresh to show.
+    """
+    tldr = cfg.memory_dir / _ROADMAP_TLDR_NAME
+    try:
+        if not tldr.is_file() or tldr.stat().st_mtime < time.time() - within_hours * 3600.0:
+            return ""
+        body = tldr.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+    return body
+
+
 def build_board(cfg: DirectorConfig) -> str:
-    """Snapshot the work board + execution signals as a single prompt block."""
+    """Snapshot the work board + execution signals as a single prompt block.
+
+    When the hourly roadmapper has refreshed `.director/roadmap-tldr.md` within
+    the last couple of hours, a leading "Plan update" section carries that TL;DR
+    so a pulse reacts to a changed plan automatically.
+    """
     sections: list[str] = []
+    plan_update = _plan_update(cfg)
+    if plan_update:
+        sections.append("### Plan update (latest roadmap pass)\n" + plan_update)
     for label, cmd in _BOARD_COMMANDS:
         out = _run(cmd, cfg.workspace_dir)
         sections.append("### " + label + "\n" + (out or "(none)"))
@@ -139,12 +173,13 @@ def build_prompt(
 
     `agents_dir` defaults to po_director's builtin prompts; the persona-aware
     flows pass a resolved persona directory so a pack-shipped persona's
-    `prompt.md` (and optional `reflector/prompt.md`) renders instead. `extra`
-    overrides any computed var.
+    `prompt.md` (and optional `reporter/prompt.md`, `roadmapper/prompt.md`)
+    renders instead. `extra` overrides any computed var.
     """
     base = agents_dir if agents_dir is not None else AGENTS_DIR
     vars_: dict[str, object] = {
         "workspace_dir": cfg.workspace_dir,
+        "persona": cfg.persona,
         "goal": _read_goal(cfg),
         "north_star": cfg.north_star,
         "work_source": cfg.work_source,
@@ -171,18 +206,34 @@ def persona_prompt(cfg: DirectorConfig, **extra: object) -> str:
     return build_prompt(cfg, persona_dir.name, agents_dir=persona_dir.parent, **extra)
 
 
-def reflect_prompt(cfg: DirectorConfig, **extra: object) -> str:
-    """Render the reflection prompt, preferring a persona-shipped reflector.
+def roadmap_prompt(cfg: DirectorConfig, **extra: object) -> str:
+    """Render the hourly planning ('roadmap') prompt.
 
-    Uses `<persona_dir>/reflector/prompt.md` when the persona ships one;
-    otherwise falls back to po_director's builtin reflector.
+    Runs as the SAME persona doing a planning pass (not a separate identity):
+    prefers a persona-shipped `<persona_dir>/roadmapper/prompt.md`, else the
+    builtin roadmapper. The persona name is available as `{{persona}}` so a
+    pack's roadmapper (e.g. the CEO's) reads in that persona's voice.
     """
     from po_director.persona import resolve_persona_dir
 
     persona_dir = resolve_persona_dir(cfg.persona)
-    if (persona_dir / "reflector" / "prompt.md").is_file():
-        return build_prompt(cfg, "reflector", agents_dir=persona_dir, **extra)
-    return build_prompt(cfg, "reflector", **extra)
+    if (persona_dir / "roadmapper" / "prompt.md").is_file():
+        return build_prompt(cfg, "roadmapper", agents_dir=persona_dir, **extra)
+    return build_prompt(cfg, "roadmapper", **extra)
+
+
+def report_prompt(cfg: DirectorConfig, **extra: object) -> str:
+    """Render the nightly report prompt, preferring a persona-shipped reporter.
+
+    Uses `<persona_dir>/reporter/prompt.md` when the persona ships one;
+    otherwise falls back to po_director's builtin reporter.
+    """
+    from po_director.persona import resolve_persona_dir
+
+    persona_dir = resolve_persona_dir(cfg.persona)
+    if (persona_dir / "reporter" / "prompt.md").is_file():
+        return build_prompt(cfg, "reporter", agents_dir=persona_dir, **extra)
+    return build_prompt(cfg, "reporter", **extra)
 
 
 def dream_prompt(cfg: DirectorConfig, **extra: object) -> str:

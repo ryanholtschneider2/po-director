@@ -97,7 +97,8 @@ def test_ade_minimal_corp_dir_contract(tmp_path: Path) -> None:
                 'slack_channel = "C08LB4V9ZJ8"',
                 "[schedule]",
                 'pulse_cron = "*/15 * * * *"',
-                'reflect_cron = "0 9 * * *"',
+                'roadmap_cron = "*/30 * * * *"',
+                'report_cron = "0 22 * * *"',
             ]
         )
         + "\n",
@@ -106,7 +107,22 @@ def test_ade_minimal_corp_dir_contract(tmp_path: Path) -> None:
     assert cfg.north_star == "MRR > 10k"
     assert cfg.slack_channel == "C08LB4V9ZJ8"
     assert cfg.pulse_cron == "*/15 * * * *"
-    assert cfg.reflect_cron == "0 9 * * *"
+    assert cfg.roadmap_cron == "*/30 * * * *"
+    assert cfg.report_cron == "0 22 * * *"
+
+
+def test_ade_legacy_reflect_cron_migrates_to_report(tmp_path: Path) -> None:
+    # A pre-rename .ade [schedule].reflect_cron migrates to report_cron.
+    _write_ade(tmp_path, '[schedule]\nreflect_cron = "0 9 * * *"\n')
+    assert load_config(tmp_path).report_cron == "0 9 * * *"
+
+
+def test_legacy_director_toml_reflect_cron_migrates_to_report(tmp_path: Path) -> None:
+    # A pre-rename flat .director.toml reflect_cron migrates to report_cron.
+    (tmp_path / ".director.toml").write_text(
+        'reflect_cron = "0 8 * * *"\n', encoding="utf-8"
+    )
+    assert load_config(tmp_path).report_cron == "0 8 * * *"
 
 
 def test_ade_goal_path_override(tmp_path: Path) -> None:

@@ -7,9 +7,10 @@ Subcommand-as-flag because po's command dispatch only parses `--key value`:
     po director --stop
 
 `--start` ensures `<dir>/.director.toml` (first run prompts for goal + North
-Star on a TTY, else uses defaults), writes `goal.md`, and applies the two
-workspace-stamped cron deployments. `--stop` deletes them. Default (no flag) is
-`--status`.
+Star on a TTY, else uses defaults), writes `goal.md`, and applies the
+workspace-stamped cron deployments (pulse / roadmap / report / dream / improve,
+plus the PR-Sheriff in auto merge modes). `--stop` deletes them. Default (no
+flag) is `--status`.
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ from po_director.deployments import (
     AUTO_MERGE_MODES,
     build_workspace_deployments,
     deployment_names,
+    legacy_reflect_deployment_name,
     sheriff_deployment_name,
 )
 
@@ -54,7 +56,8 @@ def _ensure_config(
     merge_strategy: str | None,
     approval_mode: str | None,
     pulse_cron: str | None,
-    reflect_cron: str | None,
+    roadmap_cron: str | None,
+    report_cron: str | None,
     north_star: str | None,
     persona: str | None = None,
 ) -> DirectorConfig:
@@ -87,8 +90,10 @@ def _ensure_config(
         cfg.work_ask = "gate"
     if pulse_cron is not None:
         cfg.pulse_cron = pulse_cron
-    if reflect_cron is not None:
-        cfg.reflect_cron = reflect_cron
+    if roadmap_cron is not None:
+        cfg.roadmap_cron = roadmap_cron
+    if report_cron is not None:
+        cfg.report_cron = report_cron
     if north_star is not None:
         cfg.north_star = north_star
 
@@ -131,17 +136,21 @@ def _start(cfg: DirectorConfig) -> str:
 
 
 def _stop(cfg: DirectorConfig) -> str:
-    pulse_name, reflect_name, dream_name, improve_name = deployment_names(cfg)
+    pulse_name, roadmap_name, report_name, dream_name, improve_name = deployment_names(cfg)
     results = []
     # The Sheriff deployment is only applied for auto merge modes, but always
     # attempt its delete — `prefect deployment delete` no-ops ("not found")
     # when it was never applied, so stop stays idempotent across mode changes.
+    # The legacy `director-reflect-*` deployment is likewise always targeted so
+    # an upgraded workspace's pre-rename deployment is cleaned up, not orphaned.
     for flow_name, dep_name in (
         ("director-pulse", pulse_name),
-        ("director-reflect", reflect_name),
+        ("director-roadmap", roadmap_name),
+        ("director-report", report_name),
         ("director-dream", dream_name),
         ("director-improve", improve_name),
         ("pr-sheriff", sheriff_deployment_name(cfg)),
+        ("director-reflect", legacy_reflect_deployment_name(cfg)),
     ):
         target = flow_name + "/" + dep_name
         proc = subprocess.run(
@@ -155,8 +164,8 @@ def _stop(cfg: DirectorConfig) -> str:
 
 
 def _status(cfg: DirectorConfig) -> str:
-    pulse_name, reflect_name, dream_name, improve_name = deployment_names(cfg)
-    deploy_line = pulse_name + ", " + reflect_name + ", " + dream_name + ", " + improve_name
+    pulse_name, roadmap_name, report_name, dream_name, improve_name = deployment_names(cfg)
+    deploy_line = ", ".join([pulse_name, roadmap_name, report_name, dream_name, improve_name])
     if cfg.merge_mode in AUTO_MERGE_MODES:
         deploy_line += ", " + sheriff_deployment_name(cfg) + " (PR-triggered)"
     return "\n".join(
@@ -171,7 +180,8 @@ def _status(cfg: DirectorConfig) -> str:
             "  ci_cmd:        " + (cfg.ci_cmd or "(unset — agent will detect)"),
             "  slack_channel: " + (cfg.slack_channel or "(none)"),
             "  pulse_cron:    " + cfg.pulse_cron,
-            "  reflect_cron:  " + cfg.reflect_cron,
+            "  roadmap_cron:  " + cfg.roadmap_cron,
+            "  report_cron:   " + cfg.report_cron,
             "  dream_cron:    " + cfg.dream_cron,
             "  improve_cron:  " + cfg.improve_cron,
             "  deployments:   " + deploy_line,
@@ -193,7 +203,8 @@ def director(
     merge_strategy: str | None = None,
     approval_mode: str | None = None,  # deprecated alias -> work_ask=gate
     pulse_cron: str | None = None,
-    reflect_cron: str | None = None,
+    roadmap_cron: str | None = None,
+    report_cron: str | None = None,
     north_star: str | None = None,
     persona: str | None = None,
 ) -> str:
@@ -230,7 +241,8 @@ def director(
             merge_strategy=merge_strategy,
             approval_mode=approval_mode,
             pulse_cron=pulse_cron,
-            reflect_cron=reflect_cron,
+            roadmap_cron=roadmap_cron,
+            report_cron=report_cron,
             north_star=north_star,
             persona=persona,
         )

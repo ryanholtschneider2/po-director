@@ -18,9 +18,10 @@ CONFIG_NAME = ".director.toml"
 ADE_CONFIG_NAME = ".ade/settings.toml"  # consolidated, agent-writable
 
 DEFAULT_PULSE_CRON = "*/20 * * * *"  # every 20 min — 10 min was too aggressive; override per-workspace in .director.toml
-DEFAULT_REFLECT_CRON = "0 13 * * *"  # daily at 13:00 local
+DEFAULT_ROADMAP_CRON = "0 * * * *"  # hourly — the planning pass that maintains ROADMAP.md + decomposes into beads
+DEFAULT_REPORT_CRON = "0 21 * * *"  # nightly at 21:00 local — end-of-day report
 DEFAULT_DREAM_CRON = "0 4 * * *"  # daily at 04:00 local — off-peak consolidation
-DEFAULT_IMPROVE_CRON = "0 5 * * 1"  # weekly Mon 05:00 — autonomy ratchet
+DEFAULT_IMPROVE_CRON = "0 5 * * *"  # nightly at 05:00 local — autonomy ratchet
 DEFAULT_GOAL_PATH = "goal.md"
 DEFAULT_NORTH_STAR = "open issues burned down"
 
@@ -52,7 +53,8 @@ class DirectorConfig:
     north_star: str = DEFAULT_NORTH_STAR
     slack_channel: str | None = None
     pulse_cron: str = DEFAULT_PULSE_CRON
-    reflect_cron: str = DEFAULT_REFLECT_CRON
+    roadmap_cron: str = DEFAULT_ROADMAP_CRON
+    report_cron: str = DEFAULT_REPORT_CRON
     dream_cron: str = DEFAULT_DREAM_CRON
     improve_cron: str = DEFAULT_IMPROVE_CRON
     # Involvement axes.
@@ -101,7 +103,8 @@ def _flatten_ade(data: dict[str, object]) -> dict[str, object]:
     [persona].name, [goals].{north_star, goal_path},
     [involvement].{work_source,work_ask,merge_mode},
     [merge].{strategy->merge_strategy, ci_cmd},
-    [notify].slack_channel, [schedule].{pulse_cron, reflect_cron}.
+    [notify].slack_channel, [schedule].{pulse_cron, roadmap_cron, report_cron,
+    dream_cron, improve_cron} (legacy [schedule].reflect_cron migrates to report_cron).
 
     Together these let a corp dir express the whole minimal contract — persona,
     north_star, slack_channel, and optional cron overrides — in one short file
@@ -133,9 +136,13 @@ def _flatten_ade(data: dict[str, object]) -> dict[str, object]:
         out["slack_channel"] = notify["slack_channel"]
     schedule = data.get("schedule")
     if isinstance(schedule, dict):
-        for key in ("pulse_cron", "reflect_cron", "dream_cron", "improve_cron"):
+        for key in ("pulse_cron", "roadmap_cron", "report_cron", "dream_cron", "improve_cron"):
             if key in schedule:
                 out[key] = schedule[key]
+        # Legacy: reflect_cron was renamed to report_cron. Migrate when the new
+        # key isn't already set.
+        if "reflect_cron" in schedule and "report_cron" not in schedule:
+            out["report_cron"] = schedule["reflect_cron"]
     return out
 
 
@@ -170,6 +177,10 @@ def load_config(
         approval = data.get("approval_mode")
         if isinstance(approval, str) and "work_ask" not in data:
             kwargs["work_ask"] = _LEGACY_APPROVAL_TO_ASK.get(approval, DEFAULT_WORK_ASK)
+        # Legacy: reflect_cron was renamed to report_cron. Preserve the
+        # operator's configured value when the new key isn't present.
+        if "reflect_cron" in data and "report_cron" not in data:
+            kwargs["report_cron"] = data["reflect_cron"]
 
     # .ade/settings.toml overrides legacy.
     ade = ade_config_path(workspace_dir)

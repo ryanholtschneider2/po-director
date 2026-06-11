@@ -3,7 +3,9 @@
 A *persona* is the standing agent's identity for one workspace — by default
 `director`, but any installed pack may ship its own (e.g. `ceo`, `pm`). A
 persona is a directory containing `prompt.md` (the pulse persona prompt) and
-optionally `config.toml` (per-persona defaults) and a `reflector/prompt.md`.
+optionally `config.toml` (per-persona defaults) plus task overrides
+(`reporter/prompt.md`, `roadmapper/prompt.md`, `dreamer/prompt.md`,
+`improver/prompt.md`).
 
 Resolution order (mirrors po core's last-write-wins entry-point convention,
 but here EP-shipped personas take precedence so a pack can override a builtin):
@@ -36,7 +38,8 @@ PERSONA_DEFAULT_KEYS = (
     "work_source",
     "work_ask",
     "pulse_cron",
-    "reflect_cron",
+    "roadmap_cron",
+    "report_cron",
     "dream_cron",
     "improve_cron",
     "merge_mode",

@@ -4,8 +4,9 @@ Two paths:
 - `register()` (the `po.deployments` entry point, used by `po deploy`) ships
   rig-agnostic no-schedule `*-manual` deployments.
 - `build_workspace_deployments(cfg)` builds the *scheduled*, workspace-stamped
-  pulse + reflect deployments that `po director --start` applies. The workspace
-  dir is baked into `parameters` because a cron run has no interactive CWD.
+  pulse + roadmap + report + dream + improve deployments that `po director
+  --start` applies. The workspace dir is baked into `parameters` because a cron
+  run has no interactive CWD.
 """
 
 from __future__ import annotations
@@ -22,7 +23,8 @@ from po_director.coordinator import (
     director_dream,
     director_improve,
     director_pulse,
-    director_reflect,
+    director_report,
+    director_roadmap,
 )
 from po_director.sheriff import pr_sheriff
 
@@ -39,7 +41,8 @@ def register() -> list:
     """Rig-agnostic manual deployments (for `po deploy` / `po run --at`)."""
     return [
         director_pulse.to_deployment(name="director-pulse-manual", **_MODULE_PATH),
-        director_reflect.to_deployment(name="director-reflect-manual", **_MODULE_PATH),
+        director_roadmap.to_deployment(name="director-roadmap-manual", **_MODULE_PATH),
+        director_report.to_deployment(name="director-report-manual", **_MODULE_PATH),
         director_dream.to_deployment(name="director-dream-manual", **_MODULE_PATH),
         director_improve.to_deployment(name="director-improve-manual", **_MODULE_PATH),
         pr_sheriff.to_deployment(name="pr-sheriff-manual", **_MODULE_PATH),
@@ -86,27 +89,44 @@ def build_sheriff_deployment(cfg: DirectorConfig) -> Any:
     )
 
 
-def deployment_names(cfg: DirectorConfig) -> tuple[str, str, str, str]:
-    """Scheduled pulse + reflect + dream + improve deployment names for this workspace.
+def _persona_workspace_slug(cfg: DirectorConfig) -> str:
+    """Workspace slug, persona-folded for non-default personas (shared helper)."""
+    slug = workspace_slug(cfg.workspace_dir)
+    if cfg.persona != DEFAULT_PERSONA:
+        slug = _persona_slug(cfg.persona) + "-" + slug
+    return slug
+
+
+def deployment_names(cfg: DirectorConfig) -> tuple[str, str, str, str, str]:
+    """Scheduled pulse + roadmap + report + dream + improve deployment names.
 
     The persona is folded into the slug when it isn't the default `director`,
     so several personas can run against one workspace without colliding. Names
     stay byte-identical for the default persona (existing deployments survive).
     """
-    slug = workspace_slug(cfg.workspace_dir)
-    if cfg.persona != DEFAULT_PERSONA:
-        slug = _persona_slug(cfg.persona) + "-" + slug
+    slug = _persona_workspace_slug(cfg)
     return (
         "director-pulse-" + slug,
-        "director-reflect-" + slug,
+        "director-roadmap-" + slug,
+        "director-report-" + slug,
         "director-dream-" + slug,
         "director-improve-" + slug,
     )
 
 
+def legacy_reflect_deployment_name(cfg: DirectorConfig) -> str:
+    """The pre-rename `director-reflect-<slug>` deployment name.
+
+    `director-reflect` was renamed to `director-report`. `po director stop`
+    targets this so an upgraded workspace's stale reflect deployment is cleaned
+    up rather than orphaned on the server.
+    """
+    return "director-reflect-" + _persona_workspace_slug(cfg)
+
+
 def build_workspace_deployments(cfg: DirectorConfig) -> list[Any]:
-    """Scheduled pulse + reflect + dream + improve deployments stamped with this workspace."""
-    pulse_name, reflect_name, dream_name, improve_name = deployment_names(cfg)
+    """Scheduled pulse + roadmap + report + dream + improve deployments for this workspace."""
+    pulse_name, roadmap_name, report_name, dream_name, improve_name = deployment_names(cfg)
     params = {"workspace_dir": cfg.workspace_dir}
     deployments: list[Any] = [
         director_pulse.to_deployment(
@@ -118,12 +138,21 @@ def build_workspace_deployments(cfg: DirectorConfig) -> list[Any]:
             work_pool_name="po",
             **_MODULE_PATH,
         ),
-        director_reflect.to_deployment(
-            name=reflect_name,
-            schedule=CronSchedule(cron=cfg.reflect_cron),
+        director_roadmap.to_deployment(
+            name=roadmap_name,
+            schedule=CronSchedule(cron=cfg.roadmap_cron),
             parameters=params,
-            tags=["po-director", "director-reflect"],
-            description="Director daily reflection for " + cfg.workspace_dir,
+            tags=["po-director", "director-roadmap"],
+            description="Director hourly roadmap planning for " + cfg.workspace_dir,
+            work_pool_name="po",
+            **_MODULE_PATH,
+        ),
+        director_report.to_deployment(
+            name=report_name,
+            schedule=CronSchedule(cron=cfg.report_cron),
+            parameters=params,
+            tags=["po-director", "director-report"],
+            description="Director nightly report for " + cfg.workspace_dir,
             work_pool_name="po",
             **_MODULE_PATH,
         ),
