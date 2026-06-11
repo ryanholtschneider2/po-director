@@ -9,7 +9,7 @@ workspace it owns.
 from __future__ import annotations
 
 import tomllib
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from po_director.persona import DEFAULT_PERSONA, load_persona_defaults
@@ -66,12 +66,42 @@ class DirectorConfig:
     # The standing agent's identity. 'director' is the builtin; packs ship more
     # via the `po.personas` entry-point group (see persona.py).
     persona: str = DEFAULT_PERSONA
+    # Named rigs this director manages — arbitrary workspaces it dispatches work
+    # into (code1, code2, marketing, gtm, …), NOT just code. Each entry is
+    # {name, path, code}: `path` is relative to workspace_dir (or absolute);
+    # `code` is a bool — only code rigs produce PRs and get a standing PR-Sheriff.
+    # Authored as `[[rigs]]` in .ade/settings.toml; not round-tripped through the
+    # flat .director.toml. See `resolved_rigs`.
+    rigs: list[dict[str, object]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         self._check("work_source", self.work_source, WORK_SOURCES)
         self._check("work_ask", self.work_ask, WORK_ASKS)
         self._check("merge_mode", self.merge_mode, MERGE_MODES)
         self._check("merge_strategy", self.merge_strategy, MERGE_STRATEGIES)
+
+    def resolved_rigs(self) -> list[dict[str, object]]:
+        """The configured rigs with `path` resolved to an absolute path.
+
+        A rig `path` is taken relative to `workspace_dir` unless already
+        absolute. Entries missing a `name` or `path` are skipped; `code`
+        defaults to False. Returns `{name, path (abs), code}` dicts.
+        """
+        base = Path(self.workspace_dir)
+        out: list[dict[str, object]] = []
+        for rig in self.rigs:
+            if not isinstance(rig, dict):
+                continue
+            name, path = rig.get("name"), rig.get("path")
+            if not isinstance(name, str) or not isinstance(path, str):
+                continue
+            abs_path = path if Path(path).is_absolute() else str((base / path).resolve())
+            out.append({"name": name, "path": abs_path, "code": bool(rig.get("code", False))})
+        return out
+
+    def code_rigs(self) -> list[dict[str, object]]:
+        """Resolved rigs flagged `code = true` (the ones that get a PR-Sheriff)."""
+        return [r for r in self.resolved_rigs() if r["code"]]
 
     @staticmethod
     def _check(name: str, val: str, allowed: tuple[str, ...]) -> None:
@@ -143,6 +173,14 @@ def _flatten_ade(data: dict[str, object]) -> dict[str, object]:
         # key isn't already set.
         if "reflect_cron" in schedule and "report_cron" not in schedule:
             out["report_cron"] = schedule["reflect_cron"]
+    # `[[rigs]]` — named workspaces the director manages (name/path/code).
+    rigs = data.get("rigs")
+    if isinstance(rigs, list):
+        out["rigs"] = [
+            {"name": r["name"], "path": r["path"], "code": bool(r.get("code", False))}
+            for r in rigs
+            if isinstance(r, dict) and isinstance(r.get("name"), str) and isinstance(r.get("path"), str)
+        ]
     return out
 
 
@@ -221,6 +259,10 @@ def save_config(cfg: DirectorConfig) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = ["# po-director workspace config — see `po director status`", ""]
     for key, val in asdict(cfg).items():
+        # `rigs` is a list of tables authored as `[[rigs]]` in .ade/settings.toml;
+        # it isn't round-tripped through the flat .director.toml.
+        if key == "rigs":
+            continue
         if val is None:
             lines.append("# " + key + " = (unset)")
             continue

@@ -162,6 +162,28 @@ def build_board(cfg: DirectorConfig) -> str:
     return "\n\n".join(sections)
 
 
+def build_rigs(cfg: DirectorConfig) -> str:
+    """Snapshot the named rigs this director manages + each rig's ready board.
+
+    Rigs are arbitrary workspaces the director dispatches work into (code1,
+    code2, marketing, gtm, …) — not just code. `code` rigs are dispatched via
+    `software-dev-agentic` and have a standing PR-Sheriff; non-code rigs the
+    director works directly / files beads into. Empty when none are configured.
+    """
+    rigs = cfg.resolved_rigs()
+    if not rigs:
+        return "(no rigs configured — you operate this workspace directly.)"
+    sections: list[str] = []
+    for rig in rigs:
+        kind = "code rig (PR-Sheriff auto-merges its PRs)" if rig["code"] else "non-code rig"
+        ready = _run(["bd", "ready"], str(rig["path"])) or "(no ready work)"
+        sections.append(
+            "### " + str(rig["name"]) + "  — " + kind + "\n"
+            "path: `" + str(rig["path"]) + "`\n" + ready
+        )
+    return "\n\n".join(sections)
+
+
 def build_prompt(
     cfg: DirectorConfig,
     role: str,
@@ -187,6 +209,7 @@ def build_prompt(
         "merge_mode": cfg.merge_mode,
         "merge_strategy": cfg.merge_strategy,
         "board": build_board(cfg),
+        "rigs": build_rigs(cfg),
         "memory": _latest_handoff(cfg),
     }
     vars_.update(extra)
