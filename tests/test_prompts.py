@@ -20,6 +20,7 @@ _DIRECTOR_VARS = {
     "goal": "Ship the roadmap.",
     "north_star": "open issues burned down",
     "board": "bd ready: (none)",
+    "rigs": "(no rigs configured — you operate this workspace directly.)",
     "work_source": "ideate",
     "work_ask": "gate",
     "merge_mode": "auto",

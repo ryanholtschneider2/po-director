@@ -172,6 +172,40 @@ layer *under* `.ade/settings.toml`.
 - **`consequential`** — dispatch freely; gate only force-push, prod deploy,
   schema migration, spend, irreversible actions, or large parallel fan-outs.
 
+## Rigs — the workspaces a director manages
+
+A director doesn't only operate its own workspace. It manages a set of named
+**rigs** — arbitrary workspaces it dispatches work into (a product codebase, a
+second codebase, a marketing rig, a gtm rig, …), each with its own `bd` board.
+The director's `{{workspace_dir}}` is where *it* lives — its roadmap, its `human`
+gates to the operator (so they show in the Orchestra Reviews panel), its memory —
+not necessarily where the work lands. This is the standard SoloCo shape: a CEO at
+the business level whose code is just one of the rigs it runs.
+
+Declare rigs as `[[rigs]]` tables in `.ade/settings.toml`:
+
+```toml
+[[rigs]]
+name = "courtpro-app"   # how the director refers to it
+path = "courtpro"        # relative to the workspace dir (or absolute)
+code = true              # code rigs get a standing PR-Sheriff + software-dev-agentic
+
+[[rigs]]
+name = "gtm"
+path = "gtm"
+code = false             # non-code: the director works it directly / files beads
+```
+
+- The director's pulse prompt is fed each rig's board (`build_rigs`), so it sees
+  the work and dispatches into the rig's **own path** (`--rig-path <rig path>`),
+  never `--rig-path {{workspace_dir}}`.
+- Each **`code = true`** rig gets its own standing **PR-Sheriff** (keyed to the
+  rig's path), so its PRs auto-merge under an auto `merge_mode`. `po director
+  start` drops a minimal merge-mode marker into a code rig that has no config of
+  its own, so its sheriff fires. Non-code rigs get no sheriff.
+- With no rigs configured, the workspace itself is assumed to be the repo (the
+  legacy workspace == code-repo case) and gets the single workspace sheriff.
+
 ## Personas
 
 A **persona** is the standing agent's identity for a workspace — by default

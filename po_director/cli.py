@@ -28,11 +28,12 @@ from po_director.config import (
     save_config,
 )
 from po_director.deployments import (
-    AUTO_MERGE_MODES,
     build_workspace_deployments,
     deployment_names,
     legacy_reflect_deployment_name,
     sheriff_deployment_name,
+    sheriff_deployment_name_for,
+    sheriff_targets,
 )
 
 
@@ -115,23 +116,59 @@ def _ensure_config(
     return cfg
 
 
+def _mark_code_rigs_auto_merge(cfg: DirectorConfig) -> list[str]:
+    """Drop a minimal merge-mode marker into each code rig lacking config.
+
+    `sheriff_dispatch.on_pr_opened(rig_path)` reads the rig's OWN config for
+    `merge_mode` to decide whether to fire its sheriff. A code rig with no
+    `.director.toml` / `.ade/settings.toml` would default to dolt/gate and never
+    auto-merge, so we write a tiny marker (merge_mode + merge_strategy) — only
+    when the rig has neither config file, so an existing rig config is never
+    clobbered. Returns the rig names that were marked.
+    """
+    marked: list[str] = []
+    for rig in cfg.code_rigs():
+        rp = Path(str(rig["path"]))
+        if (rp / ".director.toml").exists() or (rp / ".ade" / "settings.toml").exists():
+            continue
+        if not rp.is_dir():
+            continue
+        (rp / ".director.toml").write_text(
+            "# po-director code-rig marker — lets this repo's PR-Sheriff auto-merge.\n"
+            f'merge_mode = "{cfg.merge_mode}"\n'
+            f'merge_strategy = "{cfg.merge_strategy}"\n',
+            encoding="utf-8",
+        )
+        marked.append(str(rig["name"]))
+    return marked
+
+
 def _start(cfg: DirectorConfig) -> str:
     from prefect_orchestration.deployments import apply_deployment
 
+    marked = _mark_code_rigs_auto_merge(cfg)
     applied = []
     for dep in build_workspace_deployments(cfg):
         apply_deployment(dep)
         applied.append(dep.name)
+    rigs = cfg.resolved_rigs()
+    rig_line = (
+        ", ".join(str(r["name"]) + ("(code)" if r["code"] else "") for r in rigs)
+        if rigs
+        else "(none — operates this workspace directly)"
+    )
     lines = [
         "Director started for " + cfg.workspace_dir,
         "  config:        " + str(config_path(cfg.workspace_dir)),
         "  work:          " + cfg.work_source + " / " + cfg.work_ask,
         "  merge_mode:    " + cfg.merge_mode + " (" + cfg.merge_strategy + ")",
+        "  rigs:          " + rig_line,
         "  slack_channel: " + (cfg.slack_channel or "(none — set with --channel)"),
         "  deployments:   " + ", ".join(applied),
-        "",
-        "Ensure a worker is running:  prefect worker start --pool po",
     ]
+    if marked:
+        lines.append("  marked auto-merge in code rigs: " + ", ".join(marked))
+    lines += ["", "Ensure a worker is running:  prefect worker start --pool po"]
     return "\n".join(lines)
 
 
@@ -143,15 +180,24 @@ def _stop(cfg: DirectorConfig) -> str:
     # when it was never applied, so stop stays idempotent across mode changes.
     # The legacy `director-reflect-*` deployment is likewise always targeted so
     # an upgraded workspace's pre-rename deployment is cleaned up, not orphaned.
-    for flow_name, dep_name in (
+    # Sheriffs: one per code rig if rigs are declared, plus the workspace sheriff
+    # (always attempted, so a rig-config change doesn't orphan an old one).
+    sheriff_names = list(
+        dict.fromkeys(
+            [sheriff_deployment_name_for(p) for p in sheriff_targets(cfg)]
+            + [sheriff_deployment_name(cfg)]
+        )
+    )
+    targets = [
         ("director-pulse", pulse_name),
         ("director-roadmap", roadmap_name),
         ("director-report", report_name),
         ("director-dream", dream_name),
         ("director-improve", improve_name),
-        ("pr-sheriff", sheriff_deployment_name(cfg)),
         ("director-reflect", legacy_reflect_deployment_name(cfg)),
-    ):
+        *[("pr-sheriff", n) for n in sheriff_names],
+    ]
+    for flow_name, dep_name in targets:
         target = flow_name + "/" + dep_name
         proc = subprocess.run(
             ["prefect", "deployment", "delete", target],
@@ -166,8 +212,16 @@ def _stop(cfg: DirectorConfig) -> str:
 def _status(cfg: DirectorConfig) -> str:
     pulse_name, roadmap_name, report_name, dream_name, improve_name = deployment_names(cfg)
     deploy_line = ", ".join([pulse_name, roadmap_name, report_name, dream_name, improve_name])
-    if cfg.merge_mode in AUTO_MERGE_MODES:
-        deploy_line += ", " + sheriff_deployment_name(cfg) + " (PR-triggered)"
+    for repo_path in sheriff_targets(cfg):
+        deploy_line += ", " + sheriff_deployment_name_for(repo_path) + " (PR-triggered)"
+    rigs = cfg.resolved_rigs()
+    rig_line = (
+        "; ".join(
+            str(r["name"]) + ("(code)" if r["code"] else "") + " → " + str(r["path"]) for r in rigs
+        )
+        if rigs
+        else "(none — operates this workspace directly)"
+    )
     return "\n".join(
         [
             "Director status for " + cfg.workspace_dir,
@@ -177,6 +231,7 @@ def _status(cfg: DirectorConfig) -> str:
             "  work:          " + cfg.work_source + " / " + cfg.work_ask
             + "  (source / ask)",
             "  merge_mode:    " + cfg.merge_mode + " (" + cfg.merge_strategy + ")",
+            "  rigs:          " + rig_line,
             "  ci_cmd:        " + (cfg.ci_cmd or "(unset — agent will detect)"),
             "  slack_channel: " + (cfg.slack_channel or "(none)"),
             "  pulse_cron:    " + cfg.pulse_cron,

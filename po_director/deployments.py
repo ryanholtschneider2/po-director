@@ -61,32 +61,56 @@ def _persona_slug(persona: str) -> str:
     return re.sub(r"[^a-zA-Z0-9]+", "-", persona).strip("-") or "persona"
 
 
-def sheriff_deployment_name(cfg: DirectorConfig) -> str:
-    """The workspace's PR-Sheriff deployment name.
+def sheriff_deployment_name_for(workspace_dir: str) -> str:
+    """The PR-Sheriff deployment name for an arbitrary repo path.
 
-    Workspace-scoped (one PR queue per repo) — no persona fold, since the
-    Sheriff triages the repo's merges regardless of which persona dispatched
-    it. ``pr_sheriff`` is run PR-by-PR with ``feature_id`` supplied per run.
+    Path-scoped (one PR queue per repo) — matches what
+    ``sheriff_dispatch.on_pr_opened(rig_path)`` fires, so a code rig's PRs hit
+    the sheriff registered for that rig's path.
     """
-    return "pr-sheriff-" + workspace_slug(cfg.workspace_dir)
+    return "pr-sheriff-" + workspace_slug(workspace_dir)
 
 
-def build_sheriff_deployment(cfg: DirectorConfig) -> Any:
-    """The standing, event-triggered PR-Sheriff deployment for this workspace.
+def sheriff_deployment_name(cfg: DirectorConfig) -> str:
+    """The workspace's PR-Sheriff deployment name (no code rigs configured)."""
+    return sheriff_deployment_name_for(cfg.workspace_dir)
 
-    No schedule — it's fired per PR via ``sheriff_dispatch.on_pr_opened`` (the
-    software-dev agentic flow calls it when a worker's PR is opened). The
-    workspace dir is baked into ``parameters``; ``feature_id`` is supplied per
-    run by the dispatcher.
+
+def build_sheriff_deployment_for(workspace_dir: str) -> Any:
+    """A standing, event-triggered PR-Sheriff deployment for `workspace_dir`.
+
+    No schedule — fired per PR via ``sheriff_dispatch.on_pr_opened`` when a
+    worker opens a PR in this repo. ``feature_id`` is supplied per run.
     """
     return pr_sheriff.to_deployment(
-        name=sheriff_deployment_name(cfg),
-        parameters={"workspace_dir": cfg.workspace_dir},
+        name=sheriff_deployment_name_for(workspace_dir),
+        parameters={"workspace_dir": workspace_dir},
         tags=["po-director", "pr-sheriff"],
-        description="PR Sheriff merge triage for " + cfg.workspace_dir,
+        description="PR Sheriff merge triage for " + workspace_dir,
         work_pool_name="po",
         **_MODULE_PATH,
     )
+
+
+def build_sheriff_deployment(cfg: DirectorConfig) -> Any:
+    """The standing PR-Sheriff deployment for this workspace (no code rigs)."""
+    return build_sheriff_deployment_for(cfg.workspace_dir)
+
+
+def sheriff_targets(cfg: DirectorConfig) -> list[str]:
+    """The repo path(s) that should get a standing PR-Sheriff for this director.
+
+    When the director declares `code` rigs, each code rig's path gets its own
+    sheriff (the CEO workspace produces no PRs itself). Otherwise the workspace
+    is assumed to be the repo and gets the single workspace sheriff (the legacy
+    workspace == code-repo case). Empty when `merge_mode` isn't an auto mode.
+    """
+    if cfg.merge_mode not in AUTO_MERGE_MODES:
+        return []
+    code_rigs = cfg.code_rigs()
+    if code_rigs:
+        return [str(r["path"]) for r in code_rigs]
+    return [cfg.workspace_dir]
 
 
 def _persona_workspace_slug(cfg: DirectorConfig) -> str:
@@ -175,9 +199,10 @@ def build_workspace_deployments(cfg: DirectorConfig) -> list[Any]:
             **_MODULE_PATH,
         ),
     ]
-    # Auto merge modes get a standing PR-Sheriff deployment, fired per PR by
-    # the agentic flow (see sheriff_dispatch.on_pr_opened). Human/approve-all
-    # modes keep the merge a human decision, so no standing Sheriff.
-    if cfg.merge_mode in AUTO_MERGE_MODES:
-        deployments.append(build_sheriff_deployment(cfg))
+    # Auto merge modes get a standing PR-Sheriff per repo, fired per PR by the
+    # agentic flow (see sheriff_dispatch.on_pr_opened). With code rigs declared,
+    # that's one sheriff per code rig's path; otherwise the workspace itself.
+    # Human/approve-all modes keep the merge a human decision, so no Sheriff.
+    for repo_path in sheriff_targets(cfg):
+        deployments.append(build_sheriff_deployment_for(repo_path))
     return deployments
