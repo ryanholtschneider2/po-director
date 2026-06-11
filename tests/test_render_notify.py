@@ -54,7 +54,7 @@ def test_build_board_uses_command_output(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(render, "_run", fake_run)
     board = render.build_board(_cfg(tmp_path))
     assert "### ready" in board and "OUT:ready" in board
-    assert ["bd", "human", "list"] in seen
+    assert ["bd", "list", "--label", "human", "--status", "open"] in seen
     assert ["po", "status"] in seen
 
 

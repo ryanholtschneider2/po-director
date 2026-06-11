@@ -5,10 +5,10 @@ via `prefect_orchestration.AgentSession`, and post to Slack via the flow (not
 the agent) so delivery is deterministic.
 
 The pulse's approval gate is enforced *agent-side* (the prompt tells it to file
-a `bd human` gate per `approval_mode` instead of dispatching). The flow's only
-job around the gate is to **post any newly-filed gate to Slack** — detected as
-the set-difference of `bd human list` lines across the turn, which is robust
-to bd's exact output format.
+a `human`-labeled gate per `approval_mode` instead of dispatching). The flow's
+only job around the gate is to **post any newly-filed gate to Slack** — detected
+as the set-difference of open `human`-labeled beads across the turn, which is
+robust to bd's exact output format.
 """
 
 from __future__ import annotations
@@ -58,12 +58,13 @@ def _log() -> logging.Logger | logging.LoggerAdapter:
 def _gate_map(workspace_dir: str) -> dict[str, str]:
     """Snapshot open human-approval gates as `{issue_id: title}`.
 
-    Uses `bd human list --json` so the diff is by gate id (not by rendered
+    Gates are `human`-labeled beads; we list them by label/status (beads-rust
+    has no `bd human` subcommand). The diff is by gate id (not by rendered
     line), giving an accurate new-gate count and a clean Slack body.
     """
     try:
         proc = subprocess.run(
-            ["bd", "human", "list", "--json"],
+            ["bd", "list", "--label", "human", "--status", "open", "--json"],
             cwd=workspace_dir,
             capture_output=True,
             text=True,
@@ -71,13 +72,13 @@ def _gate_map(workspace_dir: str) -> dict[str, str]:
             timeout=60,
         )
     except (OSError, subprocess.SubprocessError):
-        logger.exception("bd human list --json failed")
+        logger.exception("bd list --label human --status open --json failed")
         return {}
     try:
-        # bd v1.0.4 emits `null` (not `[]`) when there are no gates.
+        # Tolerate `null`/empty output when there are no gates.
         rows = json.loads(proc.stdout or "[]") or []
     except ValueError:
-        logger.warning("bd human list --json returned non-JSON output")
+        logger.warning("bd list --label human --json returned non-JSON output")
         return {}
     return {str(r["id"]): str(r.get("title", "")) for r in rows if isinstance(r, dict) and "id" in r}
 
@@ -149,8 +150,8 @@ def director_pulse(
     if new_ids:
         body = (
             "\n".join("`" + gid + "` — " + after[gid] for gid in new_ids)
-            + '\n\nApprove with: `bd human respond <id> -r "yes, go"`'
-            + " (or dismiss: `bd human dismiss <id>`)."
+            + '\n\nApprove with: `bd close <id> -r "yes, go"`'
+            + ' (or decline: `bd close <id> -r "dismissed"`).'
         )
         if post_slack(cfg.slack_channel, _PROPOSAL_TITLE, body):
             posted = 1

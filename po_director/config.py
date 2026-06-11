@@ -17,7 +17,7 @@ from po_director.persona import DEFAULT_PERSONA, load_persona_defaults
 CONFIG_NAME = ".director.toml"
 ADE_CONFIG_NAME = ".ade/settings.toml"  # consolidated, agent-writable
 
-DEFAULT_PULSE_CRON = "*/10 * * * *"
+DEFAULT_PULSE_CRON = "*/20 * * * *"  # every 20 min — 10 min was too aggressive; override per-workspace in .director.toml
 DEFAULT_REFLECT_CRON = "0 13 * * *"  # daily at 13:00 local
 DEFAULT_DREAM_CRON = "0 4 * * *"  # daily at 04:00 local — off-peak consolidation
 DEFAULT_IMPROVE_CRON = "0 5 * * 1"  # weekly Mon 05:00 — autonomy ratchet

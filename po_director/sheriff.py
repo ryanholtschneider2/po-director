@@ -98,8 +98,8 @@ def pr_sheriff(
     if new_ids:
         body = (
             "\n".join("`" + gid + "` — " + after[gid] for gid in new_ids)
-            + '\n\nApprove with: `bd human respond <id> -r "yes, merge"`'
-            + " (or dismiss: `bd human dismiss <id>`)."
+            + '\n\nApprove with: `bd close <id> -r "yes, merge"`'
+            + ' (or decline: `bd close <id> -r "dismissed"`).'
         )
         if post_slack(cfg.slack_channel, _NEEDS_HUMAN_TITLE, body):
             posted = 1
