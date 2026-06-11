@@ -39,7 +39,7 @@ _BOARD_COMMANDS: tuple[tuple[str, list[str]], ...] = (
     ("ready", ["bd", "ready"]),
     ("in_progress", ["bd", "list", "--status", "in_progress"]),
     ("open_p012", ["bd", "list", "--status", "open", "--priority", "0,1,2"]),
-    ("human_gates", ["bd", "human", "list"]),
+    ("human_gates", ["bd", "list", "--label", "human", "--status", "open"]),
     ("po_status", ["po", "status"]),
 )
 

@@ -17,7 +17,7 @@ Workspace: `{{workspace_dir}}`. North Star: **{{north_star}}**.
 
 You may gather more (rooted at `{{workspace_dir}}`): `bd ready`,
 `bd list --status in_progress`, `bd list --status closed` (recent),
-`bd human list`, `po status`, and the goal/strategy docs.
+`bd list --label human --status open`, `po status`, and the goal/strategy docs.
 
 ## Produce the reflection
 
