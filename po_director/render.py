@@ -125,6 +125,43 @@ def recent_transcripts(cfg: DirectorConfig, *, within_hours: float = 24.0) -> st
 _ROADMAP_TLDR_NAME = "roadmap-tldr.md"
 _ROADMAP_TLDR_FRESH_HOURS = 2.0
 
+# The canonical direction doc every persona's pulse reads. Injected into the
+# board unconditionally so the settled plan is always in-context — distinct from
+# the freshness-gated `roadmap-tldr.md` "Plan update", which only surfaces when
+# the roadmapper just ran.
+_ROADMAP_NAME = "ROADMAP.md"
+# Cap on injected roadmap text (~1k tokens). A ROADMAP.md is a short direction
+# doc; the cap guards against a pathologically long one bloating every prompt.
+_ROADMAP_MAX_CHARS = 4000
+_ROADMAP_TRUNCATION_MARKER = "\n\n… (truncated — see ROADMAP.md)"
+
+
+def _roadmap_section(cfg: DirectorConfig, *, max_chars: int = _ROADMAP_MAX_CHARS) -> str:
+    """The current `ROADMAP.md` body, for the board's `### Roadmap (current)` block.
+
+    Read every pulse so a persona steers by the settled plan in-context instead of
+    fetching the file. A missing roadmap is a legitimate pre-first-pulse state — it
+    degrades to a placeholder, never raises. Long roadmaps are truncated on a line
+    boundary (never mid-row of the item table) with a `… (truncated)` marker.
+    """
+    path = Path(cfg.workspace_dir) / _ROADMAP_NAME
+    try:
+        body = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return "(no ROADMAP.md yet — if the goal has no plan, building the roadmap is the move.)"
+    except Exception:  # noqa: BLE001 — a board block must never break a render
+        logger.exception("roadmap section failed for %s", cfg.workspace_dir)
+        return "(roadmap unavailable)"
+    if not body:
+        return "(ROADMAP.md is empty — fill in Mission, North Star, and the item table.)"
+    if max_chars > 0 and len(body) > max_chars:
+        head = body[:max_chars]
+        nl = head.rfind("\n")
+        if nl > 0:
+            head = head[:nl]
+        body = head.rstrip() + _ROADMAP_TRUNCATION_MARKER
+    return body
+
 
 def _plan_update(cfg: DirectorConfig, *, within_hours: float = _ROADMAP_TLDR_FRESH_HOURS) -> str:
     """The roadmapper's latest TL;DR, if it was refreshed within `within_hours`.
@@ -148,11 +185,13 @@ def _plan_update(cfg: DirectorConfig, *, within_hours: float = _ROADMAP_TLDR_FRE
 def build_board(cfg: DirectorConfig) -> str:
     """Snapshot the work board + execution signals as a single prompt block.
 
-    When the hourly roadmapper has refreshed `.director/roadmap-tldr.md` within
-    the last couple of hours, a leading "Plan update" section carries that TL;DR
-    so a pulse reacts to a changed plan automatically.
+    A leading "Roadmap (current)" section carries the settled `ROADMAP.md` body
+    unconditionally, so every pulse steers by the plan in-context. When the hourly
+    roadmapper has also refreshed `.director/roadmap-tldr.md` within the last
+    couple of hours, a "Plan update" section follows it carrying that TL;DR so a
+    pulse reacts to a changed plan automatically.
     """
-    sections: list[str] = []
+    sections: list[str] = ["### Roadmap (current)\n" + _roadmap_section(cfg)]
     plan_update = _plan_update(cfg)
     if plan_update:
         sections.append("### Plan update (latest roadmap pass)\n" + plan_update)

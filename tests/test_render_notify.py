@@ -72,6 +72,38 @@ def test_build_board_includes_fresh_plan_update(tmp_path: Path, monkeypatch) -> 
     assert "filed epic FOO" in board
 
 
+def test_build_board_injects_roadmap_body(tmp_path: Path, monkeypatch) -> None:
+    """The settled ROADMAP.md body is injected into the board every pulse so a
+    persona steers by the plan in-context."""
+    (tmp_path / "ROADMAP.md").write_text(
+        "# Roadmap: Acme\n\n## North Star\nMRR\n\n## Roadmap\n| R1 | Landing | now | x |\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(render, "_run", lambda cmd, cwd: "(none)")
+    board = render.build_board(_cfg(tmp_path))
+    assert "### Roadmap (current)" in board
+    assert "Landing" in board and "North Star" in board
+
+
+def test_build_board_roadmap_absent_placeholder(tmp_path: Path, monkeypatch) -> None:
+    """No ROADMAP.md is legitimate (pre-first-pulse) — placeholder, never raises."""
+    monkeypatch.setattr(render, "_run", lambda cmd, cwd: "(none)")
+    board = render.build_board(_cfg(tmp_path))
+    assert "### Roadmap (current)" in board
+    assert "no ROADMAP.md yet" in board
+
+
+def test_roadmap_section_truncates_on_line_boundary(tmp_path: Path) -> None:
+    long_body = "# Roadmap\n" + "".join(f"| R{i} | item {i} | now | y |\n" for i in range(200))
+    (tmp_path / "ROADMAP.md").write_text(long_body, encoding="utf-8")
+    out = render._roadmap_section(_cfg(tmp_path), max_chars=200)
+    assert out.endswith("see ROADMAP.md)")
+    visible = out[: out.index("\n\n… (truncated")]
+    stripped = long_body.strip()
+    assert stripped.startswith(visible)
+    assert stripped[len(visible)] == "\n"  # cut landed on a line boundary
+
+
 def test_build_board_skips_stale_plan_update(tmp_path: Path, monkeypatch) -> None:
     import os
     import time
